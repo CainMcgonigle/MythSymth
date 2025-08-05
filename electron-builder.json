@@ -4,11 +4,7 @@
   "directories": {
     "output": "release"
   },
-  "files": [
-    "dist/**/*",
-    "dist-electron/**/*",
-    "node_modules/**/*"
-  ],
+  "files": ["dist/**/*", "dist-electron/**/*", "node_modules/**/*"],
   "extraResources": [
     {
       "from": "dist/backend/",

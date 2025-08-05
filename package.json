@@ -16,7 +16,7 @@
     "dist": "npm run build && npm run build:backend && electron-builder",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,scss,md,yaml}\""
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -33,6 +33,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
     "postcss": "^8.5.6",
+    "prettier": "^3.6.2",
     "tailwindcss": "^4.1.11",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",

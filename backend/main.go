@@ -1,25 +1,25 @@
 package main
 
 import (
-    "log"
+	"log"
 
-    "github.com/gin-gonic/gin"
-    "github.com/gin-contrib/cors"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 
-    "mythsmith-backend/database"
-    "mythsmith-backend/handlers"
+	"mythsmith-backend/database"
+	"mythsmith-backend/handlers"
 )
 
 func main() {
-    r := gin.Default()
-    r.Use(cors.Default())
+	r := gin.Default()
+	r.Use(cors.Default())
 
-    db, err := database.InitDB("data/mythsmith.db")
-    if err != nil {
-        log.Fatalf("Failed to initialize database: %v", err)
-    }
+	db, err := database.InitDB("data/mythsmith.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
 
-    handlers.SetupRoutes(r, db)
+	handlers.SetupRoutes(r, db)
 
-    r.Run(":8080")
+	r.Run(":8080")
 }

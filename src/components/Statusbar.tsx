@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { Node } from '../types'
-import { apiService } from '../services/api'
+import React, { useState, useEffect } from "react";
+import { Node } from "../types";
+import { apiService } from "../services/api";
 import {
   Database,
   BarChart2,
@@ -10,77 +10,91 @@ import {
   Zap,
   Check,
   X,
-  RefreshCcw
-} from 'lucide-react'
+  RefreshCcw,
+} from "lucide-react";
 
 interface StatusBarProps {
-  nodeCount: number
-  isOnline: boolean
-  selectedNode: Node | null
+  nodeCount: number;
+  isOnline: boolean;
+  selectedNode: Node | null;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
   nodeCount,
   isOnline,
-  selectedNode
+  selectedNode,
 }) => {
-  const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking')
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [backendStatus, setBackendStatus] = useState<
+    "connected" | "disconnected" | "checking"
+  >("checking");
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
   useEffect(() => {
     const checkBackendStatus = async () => {
       try {
-        const healthy = await apiService.checkHealth()
-        setBackendStatus(healthy ? 'connected' : 'disconnected')
+        const healthy = await apiService.checkHealth();
+        setBackendStatus(healthy ? "connected" : "disconnected");
         if (healthy) {
-          setLastSaved(new Date())
+          setLastSaved(new Date());
         }
       } catch {
-        setBackendStatus('disconnected')
+        setBackendStatus("disconnected");
       }
-    }
+    };
 
-    checkBackendStatus()
+    checkBackendStatus();
 
-    const interval = setInterval(checkBackendStatus, 30000)
-    return () => clearInterval(interval)
-  }, [])
+    const interval = setInterval(checkBackendStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit'
-    })
-  }
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
 
   // Refactored to return a Tailwind CSS class
   const getStatusColorClass = () => {
     switch (backendStatus) {
-      case 'connected': return 'text-green-500'
-      case 'disconnected': return 'text-red-500'
-      case 'checking': return 'text-amber-500'
-      default: return 'text-gray-500'
+      case "connected":
+        return "text-green-500";
+      case "disconnected":
+        return "text-red-500";
+      case "checking":
+        return "text-amber-500";
+      default:
+        return "text-gray-500";
     }
-  }
-  
+  };
+
   const getStatusIcon = () => {
     switch (backendStatus) {
-      case 'connected': return <Check size={16} />
-      case 'disconnected': return <X size={16} />
-      case 'checking': return <RefreshCcw size={16} className="animate-spin" />
-      default: return <Database size={16} />
+      case "connected":
+        return <Check size={16} />;
+      case "disconnected":
+        return <X size={16} />;
+      case "checking":
+        return <RefreshCcw size={16} className="animate-spin" />;
+      default:
+        return <Database size={16} />;
     }
-  }
+  };
 
   const getStatusText = () => {
     switch (backendStatus) {
-      case 'connected': return 'Connected'
-      case 'disconnected': return 'Disconnected'
-      case 'checking': return 'Checking...'
-      default: return 'Unknown'
+      case "connected":
+        return "Connected";
+      case "disconnected":
+        return "Disconnected";
+      case "checking":
+        return "Checking...";
+      default:
+        return "Unknown";
     }
-  }
+  };
 
   return (
     <div className="flex justify-between items-center px-4 py-2 text-sm bg-neutral-900 border-t border-gray-700 text-gray-400 shadow-lg">
@@ -89,10 +103,12 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           {getStatusIcon()}
           <span>Backend: {getStatusText()}</span>
         </div>
-        
+
         <div className="flex items-center gap-1.5 text-blue-500">
           <BarChart2 size={16} />
-          <span>{nodeCount} node{nodeCount !== 1 ? 's' : ''}</span>
+          <span>
+            {nodeCount} node{nodeCount !== 1 ? "s" : ""}
+          </span>
         </div>
 
         {selectedNode && (
@@ -106,16 +122,19 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       </div>
 
       <div className="flex items-center gap-6">
-        {lastSaved && backendStatus === 'connected' && (
+        {lastSaved && backendStatus === "connected" && (
           <div className="flex items-center gap-1.5 text-emerald-500">
             <Save size={16} />
             <span>Last saved: {formatTime(lastSaved)}</span>
           </div>
         )}
-        
+
         <div className="flex items-center gap-1.5 text-gray-400">
-          <Wifi size={16} className={isOnline ? 'text-green-500' : 'text-gray-500'} />
-          <span>{isOnline ? 'Online' : 'Offline'}</span>
+          <Wifi
+            size={16}
+            className={isOnline ? "text-green-500" : "text-gray-500"}
+          />
+          <span>{isOnline ? "Online" : "Offline"}</span>
         </div>
 
         <div className="flex items-center gap-1.5 text-amber-500">
@@ -124,5 +143,5 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         </div>
       </div>
     </div>
-  )
-}
+  );
+};

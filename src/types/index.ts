@@ -1,7 +1,7 @@
-import { Node as FlowNode } from 'reactflow'
+import { Node as FlowNode } from "reactflow";
 
-export type NodeType = 'character' | 'faction' | 'city' | 'event' | 'location';
-export type ConnectionDirection = 'vertical' | 'horizontal' | 'all';
+export type NodeType = "character" | "faction" | "city" | "event" | "location";
+export type ConnectionDirection = "vertical" | "horizontal" | "all";
 
 export interface NodeData {
   id: number;
@@ -20,18 +20,18 @@ export interface Node {
 }
 
 export interface Edge {
-  id: string
-  source: number
-  target: number
-  sourceHandle?: string | null 
-  targetHandle?: string | null 
-  createdAt?: string
-  updatedAt?: string
+  id: string;
+  source: number;
+  target: number;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MapData {
   nodes: Array<Partial<Node>>;
-  edges: Array<Partial<Edge>>; // This will now correctly send the new fields
+  edges: Array<Partial<Edge>>;
 }
 
 export interface CreateNodeRequest {

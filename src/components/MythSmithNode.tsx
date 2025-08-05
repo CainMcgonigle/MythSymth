@@ -1,7 +1,15 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
-import { User, Shield, Home, Calendar, MapPin, ChevronDown, ChevronUp } from "lucide-react";
-import type { NodeType, Node as MythSmithNodeType, ConnectionDirection } from "@/types";
+import {
+  User,
+  Shield,
+  Home,
+  Calendar,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+import type { NodeType, ConnectionDirection } from "@/types";
 
 const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
   const nodeData = data as {
@@ -46,26 +54,28 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
       `}
     >
       {/* Conditionally render Handles based on connectionDirection prop */}
-      {(nodeData.connectionDirection === 'vertical' || nodeData.connectionDirection === 'all') && (
+      {(nodeData.connectionDirection === "vertical" ||
+        nodeData.connectionDirection === "all") && (
         <>
           <Handle type="target" position={Position.Top} id="top-target" />
           <Handle type="source" position={Position.Bottom} id="bottom-source" />
         </>
       )}
 
-      {(nodeData.connectionDirection === 'horizontal' || nodeData.connectionDirection === 'all') && (
+      {(nodeData.connectionDirection === "horizontal" ||
+        nodeData.connectionDirection === "all") && (
         <>
           <Handle
             type="source"
             position={Position.Left}
             id="left-source"
-            style={{ background: '#555', left: -5 }}
+            style={{ background: "#555", left: -5 }}
           />
           <Handle
             type="target"
             position={Position.Right}
             id="right-target"
-            style={{ background: '#555', right: -5 }}
+            style={{ background: "#555", right: -5 }}
           />
         </>
       )}
@@ -74,7 +84,12 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
         <div className="flex items-center space-x-2">
           <div>{getNodeIcon(nodeData.type)}</div>
           <div className="flex flex-col text-left">
-            <div className="font-bold text-sm truncate max-w-[100px]" title={nodeData.name}>{nodeData.name}</div>
+            <div
+              className="font-bold text-sm truncate max-w-[100px]"
+              title={nodeData.name}
+            >
+              {nodeData.name}
+            </div>
             <div className="text-xs opacity-80 capitalize">{nodeData.type}</div>
           </div>
         </div>
@@ -99,13 +114,11 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
       <div
         className={`
           grid transition-[grid-template-rows] duration-300 ease-in-out
-          ${expanded ? 'grid-rows-[1fr] mt-2' : 'grid-rows-[0fr]'}
+          ${expanded ? "grid-rows-[1fr] mt-2" : "grid-rows-[0fr]"}
         `}
       >
         <div className="overflow-hidden">
-          <div 
-            className="text-[11px] opacity-70 border-t border-gray-400 pt-2"
-          >
+          <div className="text-[11px] opacity-70 border-t border-gray-400 pt-2">
             <p>{nodeData.description}</p>
           </div>
         </div>

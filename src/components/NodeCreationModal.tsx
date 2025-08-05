@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { NodeType, CreateNodeRequest, ConnectionDirection } from '../types'; 
+import React, { useState, useEffect } from "react";
+import { NodeType, CreateNodeRequest, ConnectionDirection } from "../types";
 
 interface NodeCreationModalProps {
   isOpen: boolean;
@@ -15,28 +15,28 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
   initialPosition = { x: 0, y: 0 },
 }) => {
   const [formData, setFormData] = useState<CreateNodeRequest>({
-    name: '',
-    type: 'character',
-    description: '',
-    connectionDirection: 'all',
-    position:{
+    name: "",
+    type: "character",
+    description: "",
+    connectionDirection: "all",
+    position: {
       x: initialPosition.x,
       y: initialPosition.y,
-    }
+    },
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setFormData({
-        name: '',
-        type: 'character',
-        description: '',
-        connectionDirection: 'all',
-        position:{
-          x: initialPosition.x + Math.random() * 100 - 50, 
+        name: "",
+        type: "character",
+        description: "",
+        connectionDirection: "all",
+        position: {
+          x: initialPosition.x + Math.random() * 100 - 50,
           y: initialPosition.y + Math.random() * 100 - 50,
-        }
+        },
       });
     }
   }, [isOpen, initialPosition.x, initialPosition.y]);
@@ -50,8 +50,8 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
       await onCreate(formData);
       onClose();
     } catch (error) {
-      console.error('Failed to create node:', error);
-      alert('Failed to create node. Please try again.');
+      console.error("Failed to create node:", error);
+      alert("Failed to create node. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -96,14 +96,19 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           {/* Name */}
           <div>
-            <label htmlFor="node-name" className="block mb-1 font-semibold text-gray-700">
+            <label
+              htmlFor="node-name"
+              className="block mb-1 font-semibold text-gray-700"
+            >
               Name *
             </label>
             <input
               id="node-name"
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
               placeholder="Enter node name"
               required
               autoFocus
@@ -114,13 +119,18 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
 
           {/* Type */}
           <div>
-            <label htmlFor="node-type" className="block mb-1 font-semibold text-gray-700">
+            <label
+              htmlFor="node-type"
+              className="block mb-1 font-semibold text-gray-700"
+            >
               Type
             </label>
             <select
               id="node-type"
               value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value as NodeType })}
+              onChange={(e) =>
+                setFormData({ ...formData, type: e.target.value as NodeType })
+              }
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-md text-sm text-gray-900
                 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
             >
@@ -134,13 +144,21 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
 
           {/* New: Connection Direction */}
           <div>
-            <label htmlFor="connection-direction" className="block mb-1 font-semibold text-gray-700">
+            <label
+              htmlFor="connection-direction"
+              className="block mb-1 font-semibold text-gray-700"
+            >
               Connections
             </label>
             <select
               id="connection-direction"
               value={formData.connectionDirection}
-              onChange={(e) => setFormData({ ...formData, connectionDirection: e.target.value as ConnectionDirection })}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  connectionDirection: e.target.value as ConnectionDirection,
+                })
+              }
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-md text-sm text-gray-900
                 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
             >
@@ -152,13 +170,18 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
 
           {/* Description */}
           <div>
-            <label htmlFor="node-description" className="block mb-1 font-semibold text-gray-700">
+            <label
+              htmlFor="node-description"
+              className="block mb-1 font-semibold text-gray-700"
+            >
               Description
             </label>
             <textarea
               id="node-description"
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, description: e.target.value })
+              }
               rows={4}
               placeholder="Optional description"
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-md text-sm text-gray-900
@@ -180,12 +203,13 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
               type="submit"
               disabled={isSubmitting || !formData.name.trim()}
               className={`flex-1 py-3 rounded-md font-semibold text-white transition
-                ${isSubmitting || !formData.name.trim()
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
+                ${
+                  isSubmitting || !formData.name.trim()
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700 cursor-pointer"
                 }`}
             >
-              {isSubmitting ? 'Creating...' : 'Create Node'}
+              {isSubmitting ? "Creating..." : "Create Node"}
             </button>
           </div>
         </form>

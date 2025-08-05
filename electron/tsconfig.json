@@ -8,8 +8,5 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "../dist-electron"
   },
-  "include": [
-    "main.ts",
-    "preload.ts"
-  ]
+  "include": ["main.ts", "preload.ts"]
 }
