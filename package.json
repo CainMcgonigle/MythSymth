@@ -1,0 +1,86 @@
+{
+  "name": "mythsmith",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A worldbuilding engine for writers and RPG designers",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron-watch\"",
+    "dev:vite": "vite",
+    "dev:electron-watch": "tsc -p electron/tsconfig.json --watch",
+    "dev:electron-runner": "NODE_ENV=development electron .",
+    "build": "npm run build:vite && npm run build:electron",
+    "build:vite": "tsc && vite build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:backend": "mkdir -p dist/backend && cd backend && go build -o ../dist/backend/mythsmith-backend",
+    "dist": "npm run build && npm run build:backend && electron-builder",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.2",
+    "electron": "^27.3.11",
+    "electron-builder": "^24.6.4",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.11",
+    "@tanstack/react-query": "^5.84.1",
+    "@tanstack/react-query-devtools": "^5.84.1",
+    "axios": "^1.6.2",
+    "lucide-react": "^0.536.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "reactflow": "^11.10.4",
+    "uuid": "^11.1.0"
+  },
+  "build": {
+    "appId": "com.mythsmith.app",
+    "productName": "MythSmith",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/backend/",
+        "to": "backend/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "icon": "assets/icon.icns",
+      "target": "dmg",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": "nsis"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": "AppImage"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+# Node.js
+# ========================
+# Node dependencies and build artifacts
+node_modules/
+npm-debug.log
+.npm/
+.yarn-cache/
+
+# Vite/Vite-related build output
+dist/
+dist-electron/
+.vite/
+
+# Go
+# ========================
+# Database files
+/backend/data/
+go-build/
+
+# Go module cache (usually ignored in monorepos)
+# GOCACHE/GOMODCACHE
+.gocache/
+
+# Environment variables (if you were to add them)
+# ========================
+.env
+.env.local
+.env.*.local
+
+# Editor and OS-specific files
+# ========================
+.DS_Store
+.vscode/*.log
+/.vscode/launch.json

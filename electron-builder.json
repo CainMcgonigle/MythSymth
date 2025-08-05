@@ -1,0 +1,31 @@
+{
+  "appId": "com.mythsmith.app",
+  "productName": "MythSmith",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "node_modules/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "dist/backend/",
+      "to": "backend/",
+      "filter": ["**/*"]
+    }
+  ],
+  "mac": {
+    "icon": "assets/icon.icns",
+    "target": "dmg"
+  },
+  "win": {
+    "icon": "assets/icon.ico",
+    "target": "nsis"
+  },
+  "linux": {
+    "icon": "assets/icon.png",
+    "target": "AppImage"
+  }
+}
