@@ -10,8 +10,8 @@ import {
 } from "lucide-react";
 
 interface SidebarProps {
-  nodes: Node[]; // All nodes for counting
-  filteredNodes?: Node[]; // Optional filtered nodes for display
+  nodes: Node[];
+  filteredNodes?: Node[];
   filter: NodeType | "all";
   onFilterChange: (filter: NodeType | "all") => void;
   onNodeSelect: (node: Node) => void;
@@ -28,7 +28,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   selectedNode,
   isOpen,
 }) => {
-  // Tailwind text color classes for the default (unselected) state
   const iconColors: Record<NodeType | "all", string> = {
     all: "text-gray-500",
     character: "text-blue-500",
@@ -38,7 +37,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     location: "text-violet-500",
   };
 
-  // Tailwind text and background classes for the filter buttons
   const filterStyles: Record<NodeType | "all", { bg: string; text: string }> = {
     all: { bg: "bg-gray-700", text: "text-gray-200" },
     character: { bg: "bg-blue-900", text: "text-blue-200" },
@@ -103,14 +101,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  // Use filteredNodes if provided, otherwise filter nodes based on current filter
   const displayNodes =
     filteredNodes ||
     (filter === "all"
       ? nodes
       : nodes.filter((node) => node.data.type === filter));
 
-  // Always calculate counts from the full nodes array
   const getNodeCounts = () => {
     const counts = {
       all: nodes.length,
@@ -223,7 +219,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     node.data.type,
                     `
                     ${selectedNode?.id === node.id ? "text-indigo-400" : "group-hover:text-indigo-400"}
-                  `,
+                  `
                   )}
                 </div>
                 <div className="node-info flex flex-col overflow-hidden">

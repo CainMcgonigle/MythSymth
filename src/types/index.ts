@@ -1,10 +1,8 @@
-import { Node as FlowNode } from "reactflow";
-
 export type NodeType = "character" | "faction" | "city" | "event" | "location";
 export type ConnectionDirection = "vertical" | "horizontal" | "all";
 
 export interface NodeData {
-  id: number;
+  id: string;
   type: NodeType;
   name: string;
   description?: string;
@@ -12,7 +10,7 @@ export interface NodeData {
 }
 
 export interface Node {
-  id: number;
+  id: string;
   position: { x: number; y: number };
   data: NodeData;
   createdAt?: string;
@@ -35,11 +33,12 @@ export interface MapData {
 }
 
 export interface CreateNodeRequest {
+  id: string;
   name: string;
   type: NodeType;
   description?: string;
   position?: { x: number; y: number };
-  connectionDirection?: ConnectionDirection;
+  connectionDirection?: ConnectionDirection | "all";
 }
 
 export interface UpdateNodeRequest {

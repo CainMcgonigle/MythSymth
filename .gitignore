@@ -16,6 +16,7 @@ dist-electron/
 # Database files
 /backend/data/
 go-build/
+__debug*
 
 # Go module cache (usually ignored in monorepos)
 # GOCACHE/GOMODCACHE
@@ -26,9 +27,3 @@ go-build/
 .env
 .env.local
 .env.*.local
-
-# Editor and OS-specific files
-# ========================
-.DS_Store
-.vscode/*.log
-/.vscode/launch.json

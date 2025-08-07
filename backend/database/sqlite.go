@@ -34,16 +34,17 @@ func InitDB(dbPath string) (*DB, error) {
 func createTables(db *sql.DB) error {
 	// Create nodes table
 	nodesTable := `
-    CREATE TABLE IF NOT EXISTS nodes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        type TEXT NOT NULL,
-        description TEXT DEFAULT '',
-        x REAL DEFAULT 0,
-        y REAL DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );`
+		CREATE TABLE IF NOT EXISTS nodes (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			x REAL DEFAULT 0,
+			y REAL DEFAULT 0,
+			connection_direction TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`
 
 	if _, err := db.Exec(nodesTable); err != nil {
 		return err

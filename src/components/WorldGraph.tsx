@@ -1,202 +1,143 @@
 import React, {
-  useState,
   useEffect,
   useCallback,
   forwardRef,
   useImperativeHandle,
+  useState,
 } from "react";
 import ReactFlow, {
-  Node as FlowNode,
-  Edge as FlowEdge,
-  addEdge,
-  Connection,
-  useNodesState,
-  useEdgesState,
   MiniMap,
   Background,
-  NodeTypes,
   BackgroundVariant,
   Panel,
+  Connection,
+  addEdge,
+  Node as FlowNode,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { apiService } from "../services/api";
-import {
-  Node,
-  NodeType,
-  CreateNodeRequest,
-  UpdateNodeRequest,
-  Edge,
-} from "../types";
-import MythSmithNode from "./MythSmithNode";
-import CustomControls from "./CustomControls";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { nodeKeys } from "../hooks/useNodes";
+import { useQuery } from "@tanstack/react-query";
 import { v4 as uuidv4 } from "uuid";
 
-// LocalStorage keys
-const LOCALSTORAGE_KEYS = {
-  NODES: "worldgraph_nodes",
-  EDGES: "worldgraph_edges",
-  PENDING_CHANGES: "worldgraph_pending_changes",
-  LAST_SAVED: "worldgraph_last_saved",
-  // New key for the snap setting
-  SNAP_TO_GRID: "worldgraph_snap_to_grid",
-};
+import { useGraphState } from "@/hooks/useGraphState";
+import { useGraphPersistence } from "@/hooks/useGraphPersistence";
+import { useGraphMutations } from "@/hooks/useGraphMutations";
+import {
+  convertToFlowNode,
+  convertToFlowEdge,
+  initializeFromLocalStorage,
+  clearLocalStorage,
+} from "../utils/graphUtils";
+import { nodeKeys } from "@/hooks/useNodes";
+import { GRID_SIZE, LOCALSTORAGE_KEYS } from "@/constants/graphConstants";
+import { WorldGraphProps, WorldGraphRef } from "@/types/graphTypes";
+import { CreateNodeRequest, Node, NodeType } from "@/types";
 
-// Types for tracking changes
-interface PendingChanges {
-  newNodes: string[]; // temp IDs of nodes to be created
-  updatedNodes: string[]; // IDs of nodes that have been modified
-  deletedNodes: string[]; // IDs of nodes that have been deleted
-  newEdges: string[]; // IDs of new edges
-  updatedEdges: string[]; // IDs of updated edges
-  deletedEdges: string[]; // IDs of deleted edges
-}
+import MythSmithNode from "./MythSmithNode";
+import CustomControls from "./CustomControls";
+import { apiService } from "@/services/api";
+import { useToast } from "../components/ui/Toast";
 
-// Helper to convert backend Node to React Flow FlowNode
-const convertToFlowNode = (node: Node): FlowNode => ({
-  id: String(node.id),
-  position: node.position || { x: 0, y: 0 },
-  data: {
-    ...node.data,
-  },
-  type: "mythsmith",
-});
-
-// Helper to convert backend Edge to React Flow FlowEdge
-const convertToFlowEdge = (edge: Edge): FlowEdge => ({
-  id: String(edge.id),
-  source: String(edge.source),
-  target: String(edge.target),
-  sourceHandle: edge.sourceHandle || undefined,
-  targetHandle: edge.targetHandle || undefined,
-  animated: true,
-});
-
-const nodeTypes: NodeTypes = {
+const nodeTypes = {
   mythsmith: MythSmithNode,
 };
 
-interface WorldGraphProps {
-  onNodeSelect?: (node: Node | null) => void;
-  onNodesUpdated?: (nodes: Node[]) => void;
-}
-
-export interface WorldGraphRef {
-  addNode: (nodeData: CreateNodeRequest) => Promise<FlowNode>;
-  deleteNode: (nodeId: string) => Promise<void>;
-  loadNodes: () => Promise<void>;
-  updateNode: (nodeId: string, updates: UpdateNodeRequest) => Promise<Node>;
-  saveMap: () => Promise<void>;
-  hasUnsavedChanges: () => boolean;
-}
-
-// New type for the mutation variables to pass the temporary ID
-type CreateNodeMutationVariables = CreateNodeRequest & { tempId: string };
-
 export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
   ({ onNodeSelect, onNodesUpdated }, ref) => {
-    const [nodes, setNodes, onNodesChange] = useNodesState([]);
-    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const graphState = useGraphState();
+    const { saveMapMutation, createNodeMutation } = useGraphMutations();
 
-    // Initialize snapToGrid state from localStorage, defaulting to true
-    const [snapToGrid, setSnapToGrid] = useState<boolean>(() => {
-      try {
-        const storedSnap = localStorage.getItem(LOCALSTORAGE_KEYS.SNAP_TO_GRID);
-        return storedSnap !== null ? JSON.parse(storedSnap) : true;
-      } catch (e) {
-        console.error(
-          "Failed to parse snapToGrid from localStorage, defaulting to true.",
-          e,
-        );
-        return true;
-      }
-    });
+    const { addToast } = useToast();
+    useGraphPersistence(graphState, graphState.isInitialized);
 
-    const [isInteractive, setIsInteractive] = useState(true);
-    const [isInitialized, setIsInitialized] = useState(false); // Flag to prevent saving until after initial load
-    const [shouldLoadFromDB, setShouldLoadFromDB] = useState(false);
-    const [pendingChanges, setPendingChanges] = useState<PendingChanges>({
-      newNodes: [],
-      updatedNodes: [],
-      deletedNodes: [],
-      newEdges: [],
-      updatedEdges: [],
-      deletedEdges: [],
-    });
-    const [isSaving, setIsSaving] = useState(false);
+    const {
+      nodes,
+      edges,
+      pendingChanges,
+      history,
+      historyIndex,
+      isSaving,
+      isInitialized,
+      shouldLoadFromDB,
+      snapToGrid,
+      isInteractive,
+      autoSaveEnabled,
+      autoSaveInterval,
+      setNodes,
+      setEdges,
+      setPendingChanges,
+      setHistory,
+      setHistoryIndex,
+      setIsSaving,
+      setIsInitialized,
+      setShouldLoadFromDB,
+      setSnapToGrid,
+      setIsInteractive,
+      setAutoSaveEnabled,
+      setAutoSaveInterval,
+      onNodesChange,
+      onEdgesChange,
+      hasUnsavedChanges,
+      saveStateToHistory,
+      undo,
+      redo,
+    } = graphState;
 
-    const queryClient = useQueryClient();
+    const [dragStartPosition, setDragStartPosition] = useState<{
+      id: string;
+      position: { x: number; y: number };
+    } | null>(null);
 
-    // Phase 1: Initial data load (runs once on mount)
+    // Add these event handlers
+    const onNodeDragStart = useCallback(
+      (_event: React.MouseEvent, node: any) => {
+        setDragStartPosition({ id: node.id, position: { ...node.position } });
+      },
+      []
+    );
+
+    const onNodeDragStop = useCallback(
+      (_event: React.MouseEvent, node: any) => {
+        if (dragStartPosition && dragStartPosition.id === node.id) {
+          const startPos = dragStartPosition.position;
+          const endPos = node.position;
+
+          // Only mark as changed if position actually changed
+          if (startPos.x !== endPos.x || startPos.y !== endPos.y) {
+            setPendingChanges((prev) => ({
+              ...prev,
+              updatedNodes: [...new Set([...prev.updatedNodes, node.id])],
+            }));
+            saveStateToHistory();
+          }
+        }
+        setDragStartPosition(null);
+      },
+      [dragStartPosition, saveStateToHistory]
+    );
+
+    // Initialize data from localStorage or DB
     useEffect(() => {
-      const savedNodes = localStorage.getItem(LOCALSTORAGE_KEYS.NODES);
-      const savedEdges = localStorage.getItem(LOCALSTORAGE_KEYS.EDGES);
+      const { savedNodes, savedEdges, savedPendingChanges } =
+        initializeFromLocalStorage();
 
       if (savedNodes !== null && savedEdges !== null) {
         console.log("Found data in localStorage. Hydrating state.");
-        try {
-          const parsedNodes = JSON.parse(savedNodes);
-          const parsedEdges = JSON.parse(savedEdges);
-          const savedPendingChanges = localStorage.getItem(
-            LOCALSTORAGE_KEYS.PENDING_CHANGES,
-          );
+        setNodes(savedNodes);
+        setEdges(savedEdges);
+        setHistory([{ nodes: savedNodes, edges: savedEdges }]);
+        setHistoryIndex(0);
 
-          setNodes(parsedNodes);
-          setEdges(parsedEdges);
-          if (savedPendingChanges) {
-            setPendingChanges(JSON.parse(savedPendingChanges));
-          }
-
-          setIsInitialized(true); // Mark as initialized so saving can begin
-        } catch (e) {
-          console.error(
-            "Failed to parse localStorage data. Falling back to DB fetch.",
-            e,
-          );
-          setShouldLoadFromDB(true);
+        if (savedPendingChanges) {
+          setPendingChanges(savedPendingChanges);
         }
+        setIsInitialized(true);
       } else {
         console.log("No data in localStorage. Triggering DB fetch.");
         setShouldLoadFromDB(true);
       }
-      // This effect should only run once on component mount.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Phase 2: Persist state to localStorage (runs whenever state changes, but only after initialization)
-    useEffect(() => {
-      if (isInitialized) {
-        localStorage.setItem(LOCALSTORAGE_KEYS.NODES, JSON.stringify(nodes));
-      }
-    }, [nodes, isInitialized]);
-
-    useEffect(() => {
-      if (isInitialized) {
-        localStorage.setItem(LOCALSTORAGE_KEYS.EDGES, JSON.stringify(edges));
-      }
-    }, [edges, isInitialized]);
-
-    useEffect(() => {
-      if (isInitialized) {
-        localStorage.setItem(
-          LOCALSTORAGE_KEYS.PENDING_CHANGES,
-          JSON.stringify(pendingChanges),
-        );
-      }
-    }, [pendingChanges, isInitialized]);
-
-    // Persist snapToGrid state to localStorage whenever it changes
-    useEffect(() => {
-      if (isInitialized) {
-        localStorage.setItem(
-          LOCALSTORAGE_KEYS.SNAP_TO_GRID,
-          JSON.stringify(snapToGrid),
-        );
-      }
-    }, [snapToGrid, isInitialized]);
-
-    // Fetch nodes using React Query (only when `shouldLoadFromDB` is true)
+    // Fetch data from DB if needed
     const {
       data: nodesData,
       isLoading: nodesLoading,
@@ -208,7 +149,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       enabled: shouldLoadFromDB,
     });
 
-    // Fetch edges using React Query (only when `shouldLoadFromDB` is true)
     const {
       data: edgesData,
       isLoading: edgesLoading,
@@ -220,24 +160,20 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       enabled: shouldLoadFromDB,
     });
 
-    // Phase 3: Handle data loading from DB (runs when DB data is fetched)
     useEffect(() => {
       if (shouldLoadFromDB && nodesData && edgesData) {
-        const flowNodes: FlowNode[] = nodesData.map(convertToFlowNode);
-        const flowEdges: FlowEdge[] = edgesData.map(convertToFlowEdge);
-
+        const flowNodes = nodesData.map(convertToFlowNode);
+        const flowEdges = edgesData.map(convertToFlowEdge);
         setNodes(flowNodes);
         setEdges(flowEdges);
-
         console.log(
           "Loaded from database:",
           flowNodes.length,
           "nodes,",
           flowEdges.length,
-          "edges",
+          "edges"
         );
 
-        // Clear pending changes since we're loading fresh from DB
         setPendingChanges({
           newNodes: [],
           updatedNodes: [],
@@ -247,12 +183,16 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           deletedEdges: [],
         });
 
+        setHistory([{ nodes: flowNodes, edges: flowEdges }]);
+        setHistoryIndex(0);
+
         if (onNodesUpdated) {
           onNodesUpdated(nodesData);
         }
+        setShouldLoadFromDB(false);
+        setIsInitialized(true);
 
-        setShouldLoadFromDB(false); // Reset the flag after loading
-        setIsInitialized(true); // Mark as initialized so saving can begin
+        addToast("Data loaded successfully!", "success");
       }
     }, [
       nodesData,
@@ -263,116 +203,84 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       onNodesUpdated,
     ]);
 
-    // Mutation to save the entire map
-    const saveMapMutation = useMutation({
-      mutationFn: (mapData: { nodes: any[]; edges: any[] }) =>
-        apiService.saveMap(mapData),
-      onSuccess: () => {
-        console.log("Map saved successfully!");
-        localStorage.setItem(
-          LOCALSTORAGE_KEYS.LAST_SAVED,
-          new Date().toISOString(),
-        );
-        setPendingChanges({
-          newNodes: [],
-          updatedNodes: [],
-          deletedNodes: [],
-          newEdges: [],
-          updatedEdges: [],
-          deletedEdges: [],
-        });
-        // After a successful save, we should refetch to get canonical data
-        queryClient.invalidateQueries({ queryKey: nodeKeys.lists() });
-        queryClient.invalidateQueries({ queryKey: ["edges"] });
-      },
-      onError: (err) => {
-        console.error("Failed to save map:", err);
-      },
-    });
-
-    // Mutation for creating nodes (only used during save)
-    const createNodeMutation = useMutation({
-      mutationFn: (variables: CreateNodeMutationVariables) =>
-        apiService.createNode(variables),
-      onSuccess: (data: Node, variables) => {
-        const tempId = variables.tempId;
-        setNodes((currentNodes) =>
-          currentNodes.map((node) =>
-            node.id === tempId ? convertToFlowNode(data) : node,
-          ),
-        );
-        queryClient.invalidateQueries({ queryKey: nodeKeys.lists() });
-      },
-      onError: (err) => {
-        console.error(`Failed to create node:`, err);
-      },
-    });
-
-    // Load nodes from database (overrides localStorage)
-    const loadNodes = useCallback(async () => {
-      // Clear local storage to ensure a fresh pull from the DB on next load
-      Object.values(LOCALSTORAGE_KEYS).forEach((key) =>
-        localStorage.removeItem(key),
-      );
-      setShouldLoadFromDB(true);
-    }, []);
-
-    // Check if there are unsaved changes
-    const hasUnsavedChanges = useCallback(() => {
-      return (
-        pendingChanges.newNodes.length > 0 ||
-        pendingChanges.updatedNodes.length > 0 ||
-        pendingChanges.deletedNodes.length > 0 ||
-        pendingChanges.newEdges.length > 0 ||
-        pendingChanges.updatedEdges.length > 0 ||
-        pendingChanges.deletedEdges.length > 0
-      );
-    }, [pendingChanges]);
-
-    // Save all changes to the database
     const saveMap = useCallback(async () => {
-      if (!hasUnsavedChanges() || isSaving) {
-        return;
-      }
+      if (!hasUnsavedChanges() || isSaving) return;
 
       setIsSaving(true);
-
       try {
-        // First, create new nodes
+        // First, create new nodes in the backend
         const nodesToCreate = nodes.filter((n) =>
-          pendingChanges.newNodes.includes(n.id),
+          pendingChanges.newNodes.includes(n.id)
         );
-        const createPromises = nodesToCreate.map((node) => {
+
+        // Create a mapping from temp IDs to real IDs
+        const idMapping: Record<string, string> = {};
+
+        // Create each new node and store the ID mapping
+        for (const node of nodesToCreate) {
           const createRequest: CreateNodeRequest = {
+            id: node.id.split("_")[1],
             name: node.data.name,
             type: node.data.type,
             description: node.data.description,
             position: node.position,
             connectionDirection: node.data.connectionDirection,
           };
-          return createNodeMutation.mutateAsync({
-            ...createRequest,
-            tempId: node.id,
-          });
-        });
 
-        await Promise.all(createPromises);
+          try {
+            const createdNode = await createNodeMutation.mutateAsync({
+              ...createRequest,
+              tempId: node.id,
+            });
+
+            // Store the mapping from temp ID to real ID
+            idMapping[node.id] = String(createdNode.id);
+
+            // Update the node in local state with the real ID from the backend
+            setNodes((currentNodes) =>
+              currentNodes.map((n) =>
+                n.id === node.id ? convertToFlowNode(createdNode) : n
+              )
+            );
+          } catch (error) {
+            console.error(
+              `Failed to create node with tempId ${node.id}:`,
+              error
+            );
+            addToast("Failed to save some nodes to the server.", "error");
+          }
+        }
+
+        // Update edges to use real IDs instead of temp IDs
+        const updatedEdges = edges.map((edge) => {
+          const newEdge = { ...edge };
+          if (idMapping[edge.source]) {
+            newEdge.source = idMapping[edge.source];
+          }
+          if (idMapping[edge.target]) {
+            newEdge.target = idMapping[edge.target];
+          }
+          return newEdge;
+        });
 
         // Then save all nodes and edges (including updates and deletions)
         const nodesToSave = nodes
           .filter((n) => !pendingChanges.deletedNodes.includes(n.id))
-          .map((n) => ({
-            id: parseInt(n.id),
-            position: n.position,
-            data: n.data,
-          }));
+          .map((n) => {
+            const nodeId = idMapping[n.id] || n.id;
+            return {
+              id: nodeId,
+              position: n.position,
+              data: n.data,
+            };
+          });
 
-        const edgesToSave = edges
+        const edgesToSave = updatedEdges
           .filter((e) => !pendingChanges.deletedEdges.includes(e.id))
           .map((e) => ({
             id: e.id,
-            source: parseInt(e.source),
-            target: parseInt(e.target),
+            source: e.source,
+            target: e.target,
             sourceHandle: e.sourceHandle,
             targetHandle: e.targetHandle,
           }));
@@ -382,9 +290,22 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           edges: edgesToSave,
         });
 
-        console.log("All changes saved to the database.");
+        setPendingChanges({
+          newNodes: [],
+          updatedNodes: [],
+          deletedNodes: [],
+          newEdges: [],
+          updatedEdges: [],
+          deletedEdges: [],
+        });
+
+        setHistory([{ nodes, edges: updatedEdges }]);
+        setHistoryIndex(0);
+
+        addToast("All changes saved successfully!", "success");
       } catch (error) {
         console.error("Failed to save changes:", error);
+        addToast("Failed to save changes. Please try again.", "error");
       } finally {
         setIsSaving(false);
       }
@@ -396,12 +317,51 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       saveMapMutation,
       hasUnsavedChanges,
       isSaving,
+      addToast,
     ]);
 
-    // Handle Ctrl+S keyboard shortcut
+    // Auto-save effect
+    useEffect(() => {
+      if (!autoSaveEnabled || !hasUnsavedChanges() || !isInitialized) return;
+
+      const intervalId = setInterval(() => {
+        if (hasUnsavedChanges() && !isSaving) {
+          console.log("Auto-saving changes...");
+          saveMap();
+        }
+      }, autoSaveInterval);
+
+      return () => clearInterval(intervalId);
+    }, [
+      autoSaveEnabled,
+      autoSaveInterval,
+      hasUnsavedChanges,
+      isSaving,
+      saveMap,
+      isInitialized,
+    ]);
+
+    // Keyboard shortcuts
     useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
-        if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key === "z" &&
+          !event.shiftKey
+        ) {
+          event.preventDefault();
+          undo();
+        } else if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key === "z" &&
+          event.shiftKey
+        ) {
+          event.preventDefault();
+          redo();
+        } else if ((event.ctrlKey || event.metaKey) && event.key === "y") {
+          event.preventDefault();
+          redo();
+        } else if ((event.ctrlKey || event.metaKey) && event.key === "s") {
           event.preventDefault();
           if (hasUnsavedChanges() && !isSaving) {
             saveMap();
@@ -411,45 +371,49 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
 
       document.addEventListener("keydown", handleKeyDown);
       return () => document.removeEventListener("keydown", handleKeyDown);
-    }, [hasUnsavedChanges, isSaving, saveMap]);
+    }, [undo, redo, hasUnsavedChanges, isSaving, saveMap]);
 
+    // Snap to grid effect
     useEffect(() => {
       if (snapToGrid) {
-        const gridSize = 15;
         setNodes((currentNodes) => {
           return currentNodes.map((node) => ({
             ...node,
             position: {
-              x: Math.round(node.position.x / gridSize) * gridSize,
-              y: Math.round(node.position.y / gridSize) * gridSize,
+              x: Math.round(node.position.x / GRID_SIZE) * GRID_SIZE,
+              y: Math.round(node.position.y / GRID_SIZE) * GRID_SIZE,
             },
           }));
         });
       }
     }, [snapToGrid, setNodes]);
 
-    // Custom nodes change handler to track position updates
+    // Event handlers
     const handleNodesChange = useCallback(
       (changes: any[]) => {
         onNodesChange(changes);
-
         changes.forEach((change) => {
-          if (change.type === "position" && change.position) {
-            setPendingChanges((prev) => ({
-              ...prev,
-              updatedNodes: [...new Set([...prev.updatedNodes, change.id])],
-            }));
+          // Only track non-position changes or position changes when not dragging
+          if (change.type !== "position" || !dragStartPosition) {
+            if (change.type === "position" && change.position) {
+              setPendingChanges((prev) => ({
+                ...prev,
+                updatedNodes: [...new Set([...prev.updatedNodes, change.id])],
+              }));
+            }
           }
         });
+        // Don't save to history during drag operations
+        if (!dragStartPosition) {
+          saveStateToHistory();
+        }
       },
-      [onNodesChange],
+      [onNodesChange, dragStartPosition, saveStateToHistory]
     );
 
-    // Custom edges change handler to track edge updates
     const handleEdgesChange = useCallback(
       (changes: any[]) => {
         onEdgesChange(changes);
-
         changes.forEach((change) => {
           if (change.type === "add") {
             setPendingChanges((prev) => ({
@@ -463,18 +427,19 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
             }));
           }
         });
+        saveStateToHistory();
       },
-      [onEdgesChange],
+      [onEdgesChange, saveStateToHistory]
     );
 
     const handleNodeClick = useCallback(
-      (_event: React.MouseEvent, flowNode: FlowNode) => {
+      (_event: React.MouseEvent, flowNode: any) => {
         if (onNodeSelect) {
           const selectedNode: Node = {
-            id: parseInt(flowNode.id),
+            id: flowNode.id,
             position: flowNode.position || { x: 0, y: 0 },
             data: {
-              id: parseInt(flowNode.id),
+              id: flowNode.id,
               name: flowNode.data.name,
               type: flowNode.data.type,
               description: flowNode.data.description,
@@ -486,7 +451,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           onNodeSelect(selectedNode);
         }
       },
-      [onNodeSelect],
+      [onNodeSelect]
     );
 
     const handlePaneClick = useCallback(() => {
@@ -497,21 +462,32 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
 
     const onConnect = useCallback(
       (params: Connection) => {
-        const newEdge = { ...params, type: "mythsmith", id: uuidv4() };
+        const newEdge = {
+          ...params,
+          type: "mythsmith",
+          id: "temp_" + uuidv4(),
+        };
         setEdges((eds) => addEdge(newEdge, eds));
-
         setPendingChanges((prev) => ({
           ...prev,
           newEdges: [...new Set([...prev.newEdges, newEdge.id])],
         }));
+        saveStateToHistory();
       },
-      [setEdges],
+      [setEdges, saveStateToHistory]
     );
+
+    // Action functions
+    const loadNodes = useCallback(async () => {
+      clearLocalStorage();
+      setShouldLoadFromDB(true);
+      addToast("Loading data from server...", "info");
+    }, [addToast]);
 
     const addNode = useCallback(
       async (nodeData: CreateNodeRequest) => {
-        const tempId = uuidv4();
-
+        // Use a consistent UUID format for all nodes
+        const tempId = `temp_${uuidv4()}`;
         const newFlowNode: FlowNode = {
           id: tempId,
           position: nodeData.position || { x: 0, y: 0 },
@@ -521,39 +497,93 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           type: "mythsmith",
         };
 
+        // Update local state
         setNodes((nds) => [...nds, newFlowNode]);
 
+        // Track as a new node that needs to be saved
         setPendingChanges((prev) => ({
           ...prev,
           newNodes: [...prev.newNodes, tempId],
         }));
 
+        saveStateToHistory();
         return newFlowNode;
       },
-      [setNodes],
+      [setNodes, saveStateToHistory]
     );
 
     const deleteNode = useCallback(
       async (nodeId: string) => {
+        // Check if this is a temporary node (starts with 'temp_')
+        const isTempNode = nodeId.startsWith("temp_");
+
+        // If it's a real node (not temporary), call the API to delete it
+        if (!isTempNode) {
+          try {
+            await apiService.deleteNode(nodeId);
+          } catch (error) {
+            console.error("Failed to delete node from backend:", error);
+            addToast("Failed to delete node. Please try again.", "error");
+            return; // Don't update local state if API call fails
+          }
+        }
+
+        // Update local state using the original ID
         setNodes((nds) => nds.filter((node) => node.id !== nodeId));
         setEdges((eds) =>
-          eds.filter(
-            (edge) => edge.source !== nodeId && edge.target !== nodeId,
-          ),
+          eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
         );
 
-        setPendingChanges((prev) => ({
-          ...prev,
-          deletedNodes: [...new Set([...prev.deletedNodes, nodeId])],
-          newNodes: prev.newNodes.filter((id) => id !== nodeId),
-          updatedNodes: prev.updatedNodes.filter((id) => id !== nodeId),
-        }));
+        // Update pending changes
+        setPendingChanges((prev) => {
+          const newDeletedNodes = isTempNode
+            ? prev.deletedNodes // Don't add temp nodes to deletedNodes since they were never in the backend
+            : [...new Set([...prev.deletedNodes, nodeId])];
+
+          return {
+            ...prev,
+            deletedNodes: newDeletedNodes,
+            newNodes: prev.newNodes.filter((id) => id !== nodeId),
+            updatedNodes: prev.updatedNodes.filter((id) => id !== nodeId),
+          };
+        });
+
+        // Update localStorage by removing the node from saved data
+        if (isInitialized) {
+          try {
+            const savedNodes = localStorage.getItem(LOCALSTORAGE_KEYS.NODES);
+            if (savedNodes) {
+              const parsedNodes = JSON.parse(savedNodes);
+              const updatedNodes = parsedNodes.filter(
+                (node: any) => node.id !== nodeId
+              );
+              localStorage.setItem(
+                LOCALSTORAGE_KEYS.NODES,
+                JSON.stringify(updatedNodes)
+              );
+            }
+
+            const savedEdges = localStorage.getItem(LOCALSTORAGE_KEYS.EDGES);
+            if (savedEdges) {
+              const parsedEdges = JSON.parse(savedEdges);
+              const updatedEdges = parsedEdges.filter(
+                (edge: any) => edge.source !== nodeId && edge.target !== nodeId
+              );
+              localStorage.setItem(
+                LOCALSTORAGE_KEYS.EDGES,
+                JSON.stringify(updatedEdges)
+              );
+            }
+          } catch (error) {
+            console.error("Failed to update localStorage:", error);
+          }
+        }
 
         if (onNodesUpdated) {
           const remainingBackendNodes = nodes
             .filter((fNode) => fNode.id !== nodeId)
             .map((fNode) => ({
-              id: parseInt(fNode.id),
+              id: fNode.id,
               data: fNode.data,
               position: fNode.position,
               createdAt: fNode.data.createdAt,
@@ -565,42 +595,56 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
         if (onNodeSelect) {
           onNodeSelect(null);
         }
+
+        saveStateToHistory();
+        addToast("Node deleted successfully", "success");
       },
-      [setNodes, setEdges, onNodeSelect, onNodesUpdated, nodes],
+      [
+        setNodes,
+        setEdges,
+        onNodeSelect,
+        onNodesUpdated,
+        nodes,
+        saveStateToHistory,
+        addToast,
+        isInitialized,
+      ]
     );
 
     const updateNode = useCallback(
-      async (nodeId: string, updates: UpdateNodeRequest): Promise<Node> => {
+      async (nodeId: string, updates: any): Promise<Node> => {
         const nodeToUpdate = nodes.find((n) => n.id === nodeId);
-
         if (!nodeToUpdate) {
           return Promise.reject(new Error(`Node with ID ${nodeId} not found`));
         }
 
         const { position: newPosition, ...updateData } = updates;
-
         const updatedNode = {
           ...nodeToUpdate,
           data: { ...nodeToUpdate.data, ...updateData },
           position: newPosition || nodeToUpdate.position,
         };
 
+        // Update local state
         setNodes((nds) => nds.map((n) => (n.id === nodeId ? updatedNode : n)));
 
+        // Track as an updated node that needs to be saved
         setPendingChanges((prev) => ({
           ...prev,
           updatedNodes: [...new Set([...prev.updatedNodes, nodeId])],
         }));
 
+        saveStateToHistory();
+
         const backendNode = {
-          id: parseInt(updatedNode.id),
+          id: updatedNode.id,
           data: updatedNode.data,
           position: updatedNode.position,
         };
 
         return Promise.resolve(backendNode as Node);
       },
-      [nodes, setNodes],
+      [nodes, setNodes, saveStateToHistory]
     );
 
     useImperativeHandle(ref, () => ({
@@ -610,6 +654,12 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       updateNode,
       saveMap,
       hasUnsavedChanges,
+      undo,
+      redo,
+      setAutoSaveEnabled,
+      setAutoSaveInterval,
+      getAutoSaveEnabled: () => autoSaveEnabled,
+      getAutoSaveInterval: () => autoSaveInterval,
     }));
 
     if (!isInitialized && (nodesLoading || edgesLoading)) {
@@ -639,11 +689,13 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           minZoom={0.2}
           maxZoom={2}
           snapToGrid={snapToGrid}
-          snapGrid={[15, 15]}
+          snapGrid={[GRID_SIZE, GRID_SIZE]}
           nodesDraggable={isInteractive}
           nodesConnectable={isInteractive}
           elementsSelectable={isInteractive}
           panOnDrag={isInteractive}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDragStop={onNodeDragStop}
         >
           <Panel position="bottom-left">
             <CustomControls
@@ -651,48 +703,80 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
               setSnapToGrid={setSnapToGrid}
               isInteractive={isInteractive}
               setIsInteractive={setIsInteractive}
+              autoSaveEnabled={autoSaveEnabled}
+              setAutoSaveEnabled={setAutoSaveEnabled}
+              autoSaveInterval={autoSaveInterval}
+              setAutoSaveInterval={setAutoSaveInterval}
+              hasUnsavedChanges={hasUnsavedChanges()}
+              onSave={saveMap}
+              isSaving={isSaving}
             />
           </Panel>
 
-          <Panel position="top-right">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                background: "rgba(0,0,0,0.8)",
-                padding: "8px 12px",
-                borderRadius: "6px",
-                color: "white",
-                fontSize: "14px",
-              }}
-            >
-              {isSaving && <span>Saving...</span>}
-              {hasUnsavedChanges() && !isSaving && (
-                <>
-                  <span style={{ color: "#fbbf24" }}>● Unsaved changes</span>
-                  <button
-                    onClick={saveMap}
-                    style={{
-                      background: "#059669",
-                      border: "none",
-                      color: "white",
-                      padding: "4px 8px",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    Save (Ctrl+S)
-                  </button>
-                </>
-              )}
-              {!hasUnsavedChanges() && !isSaving && (
-                <span style={{ color: "#10b981" }}>✓ All changes saved</span>
-              )}
+          <Panel position="bottom-right">
+            <div className="flex flex-col gap-2 bg-black/80 p-2 rounded text-white">
+              <div className="flex gap-1">
+                <button
+                  onClick={undo}
+                  disabled={historyIndex <= 0}
+                  className={`px-2 py-1 rounded text-xs ${
+                    historyIndex <= 0
+                      ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                      : "bg-blue-600 text-white cursor-pointer"
+                  }`}
+                  title="Undo (Ctrl+Z)"
+                >
+                  ↶ Undo
+                </button>
+                <button
+                  onClick={redo}
+                  disabled={historyIndex >= history.length - 1}
+                  className={`px-2 py-1 rounded text-xs ${
+                    historyIndex >= history.length - 1
+                      ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                      : "bg-blue-600 text-white cursor-pointer"
+                  }`}
+                  title="Redo (Ctrl+Y)"
+                >
+                  ↷ Redo
+                </button>
+              </div>
+              <div className="border-t border-gray-600 pt-1 mt-1">
+                <div className="flex items-center gap-1 mb-1">
+                  <input
+                    type="checkbox"
+                    id="autoSave"
+                    checked={autoSaveEnabled}
+                    onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  <label htmlFor="autoSave" className="text-xs cursor-pointer">
+                    Auto-save
+                  </label>
+                </div>
+                {autoSaveEnabled && (
+                  <div className="flex items-center gap-1">
+                    <label htmlFor="autoSaveInterval" className="text-xs">
+                      Every:
+                    </label>
+                    <select
+                      id="autoSaveInterval"
+                      value={autoSaveInterval / 1000}
+                      onChange={(e) =>
+                        setAutoSaveInterval(Number(e.target.value) * 1000)
+                      }
+                      className="bg-gray-800 text-white border border-gray-600 rounded px-1 text-xs"
+                    >
+                      <option value="15">15s</option>
+                      <option value="30">30s</option>
+                      <option value="60">1m</option>
+                      <option value="300">5m</option>
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
           </Panel>
-
           <MiniMap
             nodeColor={(node) => {
               const colors: Record<NodeType, string> = {
@@ -704,11 +788,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
               };
               return colors[node.data?.type as NodeType] || "#DDD";
             }}
-            style={{
-              backgroundColor: "#1f2937",
-              border: "1px solid #4b5563",
-              borderRadius: 8,
-            }}
+            className="!bg-gray-900 !border !border-gray-600 !rounded"
           />
           <Background
             variant={BackgroundVariant.Lines}
@@ -719,7 +799,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
         </ReactFlow>
       </div>
     );
-  },
+  }
 );
 
 WorldGraph.displayName = "WorldGraph";

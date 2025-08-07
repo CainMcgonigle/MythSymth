@@ -18,7 +18,6 @@ interface ToolbarProps {
   onToggleSidebar: () => void;
   onQuickCreate: (type: NodeType) => void;
   selectedNode: Node | null;
-  onDeleteNode: (nodeId: string) => void;
   isSidebarOpen: boolean;
 }
 
@@ -27,7 +26,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onToggleSidebar,
   onQuickCreate,
   selectedNode,
-  onDeleteNode,
   isSidebarOpen,
 }) => {
   const quickCreateOptions = [
@@ -128,7 +126,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         />
         <span>MythSmith</span>
       </div>
-      {/* Right side: Selected node info, delete button, help */}
+      {/* Right side: Selected node info, help */}
       <div className="flex items-center space-x-3 text-gray-300">
         {selectedNode && (
           <>
@@ -138,22 +136,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 {selectedNode.data.name}
               </span>
             </div>
-
-            <button
-              onClick={() => onDeleteNode(selectedNode.data.id.toString())}
-              title="Delete Selected Node"
-              className="flex items-center gap-1.5 font-semibold bg-red-700 text-white px-3 py-1.5 rounded-md shadow-md hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors duration-150"
-            >
-              <Trash2 size={18} />
-              <span>Delete</span>
-            </button>
           </>
         )}
 
         <button
           onClick={() => {
             alert(
-              "MythSmith - A worldbuilding engine for writers and RPG designers.\n\nFeatures:\n• Visual node-based world creation\n• Character, faction, city, event, and location management\n• Drag and drop interface\n• Persistent storage",
+              "MythSmith - A worldbuilding engine for writers and RPG designers.\n\nFeatures:\n• Visual node-based world creation\n• Character, faction, city, event, and location management\n• Drag and drop interface\n• Persistent storage"
             );
           }}
           title="About MythSmith"

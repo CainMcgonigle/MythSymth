@@ -2,12 +2,13 @@ import React, { useState } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
 import {
   User,
-  Shield,
+  Swords,
   Home,
   Calendar,
   MapPin,
   ChevronDown,
   ChevronUp,
+  Building,
 } from "lucide-react";
 import type { NodeType, ConnectionDirection } from "@/types";
 
@@ -35,8 +36,8 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
   const getNodeIcon = (type: NodeType) => {
     const icons = {
       character: <User size={20} />,
-      faction: <Shield size={20} />,
-      city: <Home size={20} />,
+      faction: <Swords size={20} />,
+      city: <Building size={20} />,
       event: <Calendar size={20} />,
       location: <MapPin size={20} />,
     };
@@ -53,30 +54,25 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
         ${getNodeColor(nodeData.type)}
       `}
     >
-      {/* Conditionally render Handles based on connectionDirection prop */}
+      {/* Vertical Handles */}
       {(nodeData.connectionDirection === "vertical" ||
         nodeData.connectionDirection === "all") && (
         <>
           <Handle type="target" position={Position.Top} id="top-target" />
+          <Handle type="source" position={Position.Top} id="top-source" />
+          <Handle type="target" position={Position.Bottom} id="bottom-target" />
           <Handle type="source" position={Position.Bottom} id="bottom-source" />
         </>
       )}
 
+      {/* Horizontal Handles */}
       {(nodeData.connectionDirection === "horizontal" ||
         nodeData.connectionDirection === "all") && (
         <>
-          <Handle
-            type="source"
-            position={Position.Left}
-            id="left-source"
-            style={{ background: "#555", left: -5 }}
-          />
-          <Handle
-            type="target"
-            position={Position.Right}
-            id="right-target"
-            style={{ background: "#555", right: -5 }}
-          />
+          <Handle type="target" position={Position.Left} id="left-target" />
+          <Handle type="source" position={Position.Left} id="left-source" />
+          <Handle type="target" position={Position.Right} id="right-target" />
+          <Handle type="source" position={Position.Right} id="right-source" />
         </>
       )}
 

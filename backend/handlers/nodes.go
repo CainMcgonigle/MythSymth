@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"database/sql"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +10,7 @@ import (
 	"mythsmith-backend/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // SetupRoutes sets up all routes for node-related operations
@@ -30,17 +29,14 @@ func SetupRoutes(r *gin.Engine, db *database.DB) {
 	r.PUT("/map", h.SaveMap)
 }
 
-// NodeHandler holds the database instance
 type NodeHandler struct {
 	db *database.DB
 }
 
-// NewNodeHandler returns a NodeHandler instance
 func NewNodeHandler(db *database.DB) *NodeHandler {
 	return &NodeHandler{db: db}
 }
 
-// Health returns a gin.HandlerFunc that checks the health of the application, including database connectivity.
 func (h *NodeHandler) Health() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		err := h.db.DB.Ping()
@@ -61,7 +57,6 @@ func (h *NodeHandler) Health() gin.HandlerFunc {
 	}
 }
 
-// GetNodes retrieves all nodes, optionally filtered by type
 func (h *NodeHandler) GetNodes(c *gin.Context) {
 	nodeType := c.Query("type")
 
@@ -105,14 +100,8 @@ func (h *NodeHandler) GetNodes(c *gin.Context) {
 	})
 }
 
-// GetNode retrieves a single node by ID
 func (h *NodeHandler) GetNode(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid node ID"})
-		return
-	}
+	id := c.Param("id")
 
 	var node models.Node
 	query := `
@@ -120,24 +109,19 @@ func (h *NodeHandler) GetNode(c *gin.Context) {
         FROM nodes
         WHERE id = ?
     `
-	err = h.db.QueryRow(query, id).Scan(
+	err := h.db.QueryRow(query, id).Scan(
 		&node.ID, &node.Name, &node.Type, &node.Description,
 		&node.X, &node.Y, &node.ConnectionDirection, &node.CreatedAt, &node.UpdatedAt,
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Node not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve node"})
-		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "Node not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, node.ToReactFlowNode())
 }
 
-// CreateNode creates a new node
 func (h *NodeHandler) CreateNode(c *gin.Context) {
 	var req models.CreateNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -149,20 +133,21 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		req.ConnectionDirection = models.ConnectionDirectionAll
 	}
 
+	id := uuid.NewString()
 	now := time.Now()
+
 	query := `
-        INSERT INTO nodes (name, type, description, x, y, connection_direction, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO nodes (id, name, type, description, x, y, connection_direction, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-	result, err := h.db.Exec(query, req.Name, req.Type, req.Description, req.Position.X, req.Position.Y, req.ConnectionDirection, now, now)
+	_, err := h.db.Exec(query, id, req.Name, req.Type, req.Description, req.Position.X, req.Position.Y, req.ConnectionDirection, now, now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create node"})
 		return
 	}
 
-	id, _ := result.LastInsertId()
 	node := models.Node{
-		ID:                  int(id),
+		ID:                  id,
 		Name:                req.Name,
 		Type:                req.Type,
 		Description:         req.Description,
@@ -176,14 +161,8 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 	c.JSON(http.StatusCreated, node.ToReactFlowNode())
 }
 
-// UpdateNode updates an existing node
 func (h *NodeHandler) UpdateNode(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid node ID"})
-		return
-	}
+	id := c.Param("id")
 
 	var req models.UpdateNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -239,7 +218,6 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 	h.GetNode(c)
 }
 
-// UpdateNodePositions batch updates positions of nodes
 func (h *NodeHandler) UpdateNodePositions(c *gin.Context) {
 	var req models.UpdatePositionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -281,14 +259,8 @@ func (h *NodeHandler) UpdateNodePositions(c *gin.Context) {
 	})
 }
 
-// DeleteNode deletes a node by ID
 func (h *NodeHandler) DeleteNode(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid node ID"})
-		return
-	}
+	id := c.Param("id")
 
 	result, err := h.db.Exec("DELETE FROM nodes WHERE id = ?", id)
 	if err != nil {
@@ -305,7 +277,6 @@ func (h *NodeHandler) DeleteNode(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Node deleted successfully"})
 }
 
-// GetEdges retrieves all edges
 func (h *NodeHandler) GetEdges(c *gin.Context) {
 	query := `
         SELECT id, source_node_id, target_node_id, source_handle, target_handle, relationship
@@ -321,7 +292,6 @@ func (h *NodeHandler) GetEdges(c *gin.Context) {
 	var edges []models.Edge
 	for rows.Next() {
 		var edge models.Edge
-		// Scan the new columns into the Edge struct
 		err := rows.Scan(&edge.ID, &edge.SourceNodeID, &edge.TargetNodeID, &edge.SourceHandle, &edge.TargetHandle, &edge.Relationship)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan edge data"})
@@ -336,7 +306,6 @@ func (h *NodeHandler) GetEdges(c *gin.Context) {
 	})
 }
 
-// SaveMap synchronizes all nodes and edges with the database
 func (h *NodeHandler) SaveMap(c *gin.Context) {
 	var req models.MapData
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -351,26 +320,26 @@ func (h *NodeHandler) SaveMap(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	// Nodes Synchronization (This section looks correct and doesn't need changes)
-	var existingNodeIDs []int
+	// Get existing node IDs (as strings)
 	rows, err := tx.Query("SELECT id FROM nodes")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get existing node IDs"})
 		return
 	}
+	existingNodeIDs := make(map[string]bool)
 	for rows.Next() {
-		var id int
+		var id string
 		rows.Scan(&id)
-		existingNodeIDs = append(existingNodeIDs, id)
+		existingNodeIDs[id] = true
 	}
 	rows.Close()
 
-	var receivedNodeIDs = make(map[int]bool)
+	receivedNodeIDs := make(map[string]bool)
 	for _, node := range req.Nodes {
 		receivedNodeIDs[node.ID] = true
 	}
 
-	for _, id := range existingNodeIDs {
+	for id := range existingNodeIDs {
 		if !receivedNodeIDs[id] {
 			if _, err := tx.Exec("DELETE FROM nodes WHERE id = ?", id); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete old nodes"})
@@ -379,7 +348,6 @@ func (h *NodeHandler) SaveMap(c *gin.Context) {
 		}
 	}
 
-	// Now update nodes with the correctly bound data
 	for _, node := range req.Nodes {
 		if _, err := tx.Exec(
 			`UPDATE nodes SET x = ?, y = ?, name = ?, type = ?, description = ?, connection_direction = ?, updated_at = ? WHERE id = ?`,
@@ -390,43 +358,36 @@ func (h *NodeHandler) SaveMap(c *gin.Context) {
 		}
 	}
 
-	// Edges Synchronization
-	var existingEdgeIDs = make(map[int]bool)
+	// Edge handling
 	rows, err = tx.Query("SELECT id FROM edges")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get existing edge IDs"})
 		return
 	}
+	existingEdgeIDs := make(map[string]bool)
 	for rows.Next() {
-		var id int
+		var id string
 		rows.Scan(&id)
 		existingEdgeIDs[id] = true
 	}
 	rows.Close()
 
-	var receivedEdgeIDs = make(map[int]bool)
+	receivedEdgeIDs := make(map[string]bool)
 	now := time.Now()
 	for _, edge := range req.Edges {
-		id, err := strconv.Atoi(edge.ID)
-		if err != nil { // This is a new edge
-			relationship := edge.Relationship
-			if relationship == "" {
-				relationship = ""
-			}
+		if edge.ID == "" || !existingEdgeIDs[edge.ID] {
 			if _, err := tx.Exec(
-				// Insert the new handle data
 				`INSERT INTO edges (source_node_id, target_node_id, source_handle, target_handle, relationship, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-				edge.SourceNodeID, edge.TargetNodeID, edge.SourceHandle, edge.TargetHandle, relationship, now,
+				edge.SourceNodeID, edge.TargetNodeID, edge.SourceHandle, edge.TargetHandle, edge.Relationship, now,
 			); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create new edge: %v", err)})
 				return
 			}
-		} else { // Existing edge, no update logic needed here for now
-			receivedEdgeIDs[id] = true
+		} else {
+			receivedEdgeIDs[edge.ID] = true
 		}
 	}
 
-	// Delete edges from the database that were not in the received list
 	for id := range existingEdgeIDs {
 		if !receivedEdgeIDs[id] {
 			if _, err := tx.Exec("DELETE FROM edges WHERE id = ?", id); err != nil {

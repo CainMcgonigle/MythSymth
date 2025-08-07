@@ -1,7 +1,6 @@
 package models
 
 import (
-	"strconv"
 	"time"
 )
 
@@ -27,7 +26,7 @@ const (
 
 // Node represents a node in the graph, as stored in the database
 type Node struct {
-	ID                  int                 `json:"id"`
+	ID                  string              `json:"id"`
 	Name                string              `json:"name"`
 	Type                NodeType            `json:"type"`
 	Description         string              `json:"description"`
@@ -46,7 +45,7 @@ type ReactFlowNode struct {
 		Y float64 `json:"y"`
 	} `json:"position"`
 	Data struct {
-		ID                  int                 `json:"id"`
+		ID                  string              `json:"id"`
 		Name                string              `json:"name"`
 		Type                NodeType            `json:"type"`
 		Description         string              `json:"description"`
@@ -59,13 +58,13 @@ type ReactFlowNode struct {
 // ToReactFlowNode converts a backend Node to a ReactFlowNode
 func (n *Node) ToReactFlowNode() ReactFlowNode {
 	return ReactFlowNode{
-		ID: strconv.Itoa(n.ID),
+		ID: n.ID,
 		Position: struct {
 			X float64 `json:"x"`
 			Y float64 `json:"y"`
 		}{X: n.X, Y: n.Y},
 		Data: struct {
-			ID                  int                 `json:"id"`
+			ID                  string              `json:"id"`
 			Name                string              `json:"name"`
 			Type                NodeType            `json:"type"`
 			Description         string              `json:"description"`
@@ -109,7 +108,7 @@ type UpdateNodeRequest struct {
 // UpdatePositionsRequest represents the request body for updating multiple node positions
 type UpdatePositionsRequest struct {
 	Nodes []struct {
-		ID int     `json:"id"`
+		ID string  `json:"id"`
 		X  float64 `json:"x"`
 		Y  float64 `json:"y"`
 	} `json:"nodes" binding:"required"`
@@ -117,9 +116,9 @@ type UpdatePositionsRequest struct {
 
 // Edge represents an edge in the graph, as stored in the database
 type Edge struct {
-	ID           int       `json:"id"`
-	SourceNodeID int       `json:"source"`
-	TargetNodeID int       `json:"target"`
+	ID           string    `json:"id"`
+	SourceNodeID string    `json:"source"`
+	TargetNodeID string    `json:"target"`
 	SourceHandle string    `json:"sourceHandle"`
 	TargetHandle string    `json:"targetHandle"`
 	Relationship string    `json:"relationship"`
@@ -130,7 +129,7 @@ type Edge struct {
 // MapData is the full data structure sent by the frontend for synchronization
 type MapData struct {
 	Nodes []struct {
-		ID       int `json:"id"`
+		ID       string `json:"id"`
 		Position struct {
 			X float64 `json:"x"`
 			Y float64 `json:"y"`
@@ -144,8 +143,8 @@ type MapData struct {
 	} `json:"nodes"`
 	Edges []struct {
 		ID           string `json:"id"`
-		SourceNodeID int    `json:"source"`
-		TargetNodeID int    `json:"target"`
+		SourceNodeID string `json:"source"`
+		TargetNodeID string `json:"target"`
 		SourceHandle string `json:"sourceHandle"`
 		TargetHandle string `json:"targetHandle"`
 		Relationship string `json:"relationship"`
