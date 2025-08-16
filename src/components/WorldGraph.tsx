@@ -1,3 +1,4 @@
+// WorldGraph.tsx
 import React, {
   useEffect,
   useCallback,
@@ -13,11 +14,18 @@ import ReactFlow, {
   Connection,
   addEdge,
   Node as FlowNode,
+  Edge,
+  ConnectionMode,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { v4 as uuidv4 } from "uuid";
-
+import {
+  exportToFormat,
+  importGraphData,
+  prepareImportData,
+} from "@/utils/importExportUtils";
+import ImportExportModal from "./ui/ImportExportModal";
 import { useGraphState } from "@/hooks/useGraphState";
 import { useGraphPersistence } from "@/hooks/useGraphPersistence";
 import { useGraphMutations } from "@/hooks/useGraphMutations";
@@ -31,30 +39,58 @@ import { nodeKeys } from "@/hooks/useNodes";
 import { GRID_SIZE, LOCALSTORAGE_KEYS } from "@/constants/graphConstants";
 import { WorldGraphProps, WorldGraphRef } from "@/types/graphTypes";
 import { CreateNodeRequest, Node, NodeType } from "@/types";
-
 import MythSmithNode from "./MythSmithNode";
+import MythSmithEdge, { MythSmithEdgeData } from "./edges/MythSmithEdge";
 import CustomControls from "./CustomControls";
-import { apiService } from "@/services/api";
+import ConnectionModal from "./ConnectionModal";
+import { ConnectionValidator } from "../utils/connectionValidator";
+import { apiService } from "@/services/apiService";
 import { useToast } from "../components/ui/Toast";
 
 const nodeTypes = {
   mythsmith: MythSmithNode,
 };
 
-export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
-  ({ onNodeSelect, onNodesUpdated }, ref) => {
-    const graphState = useGraphState();
-    const { saveMapMutation, createNodeMutation } = useGraphMutations();
+const edgeTypes = {
+  mythsmith: MythSmithEdge,
+};
 
+interface UpdatedWorldGraphProps extends WorldGraphProps {
+  onEdgesUpdated?: (edges: Edge[]) => void;
+}
+
+export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
+  ({ onNodeSelect, onNodesUpdated, onEdgesUpdated }, ref) => {
+    const graphState = useGraphState();
+    const queryClient = useQueryClient();
+    const { saveMapMutation, createNodeMutation } = useGraphMutations();
     const { addToast } = useToast();
+    const [pendingConnection, setPendingConnection] =
+      useState<Connection | null>(null);
+    const [connectionModal, setConnectionModal] = useState({
+      isOpen: false,
+      sourceNodeName: "",
+      targetNodeName: "",
+      suggestedType: "",
+    });
+    const [validator, setValidator] = useState<ConnectionValidator | null>(
+      null
+    );
+    const [importExportModal, setImportExportModal] = useState({
+      isOpen: false,
+    });
+    const [importDetails, setImportDetails] = useState<{
+      nodesCreated?: number;
+      edgesCreated?: number;
+      conflicts?: string[];
+      warnings?: string[];
+    }>({});
     useGraphPersistence(graphState, graphState.isInitialized);
 
     const {
       nodes,
       edges,
       pendingChanges,
-      history,
-      historyIndex,
       isSaving,
       isInitialized,
       shouldLoadFromDB,
@@ -87,7 +123,37 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       position: { x: number; y: number };
     } | null>(null);
 
-    // Add these event handlers
+    // useEffect hook to notify parent components when nodes change
+    useEffect(() => {
+      if (onNodesUpdated && isInitialized) {
+        const backendNodes = nodes.map((fNode) => ({
+          id: fNode.id,
+          data: fNode.data,
+          position: fNode.position,
+          createdAt: fNode.data.createdAt,
+          updatedAt: fNode.data.updatedAt,
+        }));
+        onNodesUpdated(backendNodes);
+      }
+    }, [nodes, onNodesUpdated, isInitialized]);
+
+    // useEffect hook to notify parent components when edges change
+    useEffect(() => {
+      if (onEdgesUpdated && isInitialized) {
+        onEdgesUpdated(edges);
+      }
+    }, [edges, onEdgesUpdated, isInitialized]);
+
+    useEffect(() => {
+      const flowEdges: Connection[] = edges.map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+      }));
+      setValidator(new ConnectionValidator(nodes, flowEdges));
+    }, [nodes, edges]);
+
     const onNodeDragStart = useCallback(
       (_event: React.MouseEvent, node: any) => {
         setDragStartPosition({ id: node.id, position: { ...node.position } });
@@ -100,8 +166,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
         if (dragStartPosition && dragStartPosition.id === node.id) {
           const startPos = dragStartPosition.position;
           const endPos = node.position;
-
-          // Only mark as changed if position actually changed
           if (startPos.x !== endPos.x || startPos.y !== endPos.y) {
             setPendingChanges((prev) => ({
               ...prev,
@@ -115,18 +179,73 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       [dragStartPosition, saveStateToHistory]
     );
 
-    // Initialize data from localStorage or DB
+    const isValidConnection = useCallback(
+      (connection: Connection): boolean => {
+        if (!validator) return true;
+        const result = validator.validateConnection(connection);
+        if (!result.isValid) {
+          addToast(result.reason || "Invalid connection", "error");
+          return false;
+        }
+        return true;
+      },
+      [validator, addToast]
+    );
+
+    const onConnect = useCallback(
+      (params: Connection) => {
+        if (!isValidConnection(params)) return;
+        const sourceNode = nodes.find((n) => n.id === params.source);
+        const targetNode = nodes.find((n) => n.id === params.target);
+        if (!sourceNode || !targetNode || !validator) return;
+        const validation = validator.validateConnection(params);
+        setPendingConnection(params);
+        setConnectionModal({
+          isOpen: true,
+          sourceNodeName: sourceNode.data.name,
+          targetNodeName: targetNode.data.name,
+          suggestedType: validation.suggestedType || "custom",
+        });
+      },
+      [nodes, validator, isValidConnection]
+    );
+
+    const handleCreateConnection = useCallback(
+      (connectionData: MythSmithEdgeData) => {
+        if (!pendingConnection) return;
+        const newEdge: Edge = {
+          ...pendingConnection,
+          id: `edge_${uuidv4()}`,
+          type: "mythsmith",
+          data: connectionData,
+          animated: connectionData.animated,
+          source: pendingConnection.source ?? "",
+          target: pendingConnection.target ?? "",
+          sourceHandle: pendingConnection.sourceHandle ?? undefined,
+          targetHandle: pendingConnection.targetHandle ?? undefined,
+        };
+        setEdges((eds) => addEdge(newEdge, eds));
+        setPendingChanges((prev) => ({
+          ...prev,
+          newEdges: [...new Set([...prev.newEdges, newEdge.id])],
+        }));
+        saveStateToHistory();
+        setPendingConnection(null);
+        setConnectionModal((prev) => ({ ...prev, isOpen: false }));
+        addToast(`${connectionData.type} connection created`, "success");
+      },
+      [pendingConnection, setEdges, saveStateToHistory, addToast]
+    );
+
     useEffect(() => {
       const { savedNodes, savedEdges, savedPendingChanges } =
         initializeFromLocalStorage();
-
       if (savedNodes !== null && savedEdges !== null) {
         console.log("Found data in localStorage. Hydrating state.");
         setNodes(savedNodes);
         setEdges(savedEdges);
         setHistory([{ nodes: savedNodes, edges: savedEdges }]);
         setHistoryIndex(0);
-
         if (savedPendingChanges) {
           setPendingChanges(savedPendingChanges);
         }
@@ -137,14 +256,13 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       }
     }, []);
 
-    // Fetch data from DB if needed
     const {
       data: nodesData,
       isLoading: nodesLoading,
       isError: nodesError,
     } = useQuery({
       queryKey: nodeKeys.lists(),
-      queryFn: () => apiService.getNodes(),
+      queryFn: () => apiService.nodes.getNodes(),
       staleTime: 5 * 60 * 1000,
       enabled: shouldLoadFromDB,
     });
@@ -155,7 +273,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       isError: edgesError,
     } = useQuery({
       queryKey: ["edges"],
-      queryFn: () => apiService.getEdges(),
+      queryFn: () => apiService.edges.getEdges(),
       staleTime: 5 * 60 * 1000,
       enabled: shouldLoadFromDB,
     });
@@ -166,14 +284,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
         const flowEdges = edgesData.map(convertToFlowEdge);
         setNodes(flowNodes);
         setEdges(flowEdges);
-        console.log(
-          "Loaded from database:",
-          flowNodes.length,
-          "nodes,",
-          flowEdges.length,
-          "edges"
-        );
-
         setPendingChanges({
           newNodes: [],
           updatedNodes: [],
@@ -182,16 +292,10 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           updatedEdges: [],
           deletedEdges: [],
         });
-
         setHistory([{ nodes: flowNodes, edges: flowEdges }]);
         setHistoryIndex(0);
-
-        if (onNodesUpdated) {
-          onNodesUpdated(nodesData);
-        }
         setShouldLoadFromDB(false);
         setIsInitialized(true);
-
         addToast("Data loaded successfully!", "success");
       }
     }, [
@@ -200,43 +304,35 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       shouldLoadFromDB,
       setNodes,
       setEdges,
-      onNodesUpdated,
+      setHistory,
+      setHistoryIndex,
+      setShouldLoadFromDB,
+      setIsInitialized,
+      addToast,
     ]);
 
     const saveMap = useCallback(async () => {
       if (!hasUnsavedChanges() || isSaving) return;
-
       setIsSaving(true);
       try {
-        // First, create new nodes in the backend
         const nodesToCreate = nodes.filter((n) =>
           pendingChanges.newNodes.includes(n.id)
         );
-
-        // Create a mapping from temp IDs to real IDs
         const idMapping: Record<string, string> = {};
-
-        // Create each new node and store the ID mapping
         for (const node of nodesToCreate) {
           const createRequest: CreateNodeRequest = {
-            id: node.id.split("_")[1],
             name: node.data.name,
             type: node.data.type,
             description: node.data.description,
             position: node.position,
             connectionDirection: node.data.connectionDirection,
           };
-
           try {
             const createdNode = await createNodeMutation.mutateAsync({
               ...createRequest,
               tempId: node.id,
             });
-
-            // Store the mapping from temp ID to real ID
             idMapping[node.id] = String(createdNode.id);
-
-            // Update the node in local state with the real ID from the backend
             setNodes((currentNodes) =>
               currentNodes.map((n) =>
                 n.id === node.id ? convertToFlowNode(createdNode) : n
@@ -250,8 +346,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
             addToast("Failed to save some nodes to the server.", "error");
           }
         }
-
-        // Update edges to use real IDs instead of temp IDs
         const updatedEdges = edges.map((edge) => {
           const newEdge = { ...edge };
           if (idMapping[edge.source]) {
@@ -260,10 +354,86 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           if (idMapping[edge.target]) {
             newEdge.target = idMapping[edge.target];
           }
+          if (typeof newEdge.sourceHandle === "string") {
+            Object.keys(idMapping).forEach((tempId) => {
+              if (
+                newEdge.sourceHandle &&
+                newEdge.sourceHandle.includes(tempId)
+              ) {
+                newEdge.sourceHandle = newEdge.sourceHandle.replace(
+                  tempId,
+                  idMapping[tempId]
+                );
+              }
+            });
+          }
+          if (typeof newEdge.targetHandle === "string") {
+            Object.keys(idMapping).forEach((tempId) => {
+              if (
+                newEdge.targetHandle &&
+                newEdge.targetHandle.includes(tempId)
+              ) {
+                newEdge.targetHandle = newEdge.targetHandle.replace(
+                  tempId,
+                  idMapping[tempId]
+                );
+              }
+            });
+          }
           return newEdge;
         });
-
-        // Then save all nodes and edges (including updates and deletions)
+        setEdges(updatedEdges);
+        try {
+          const savedEdges = localStorage.getItem(LOCALSTORAGE_KEYS.EDGES);
+          if (savedEdges) {
+            const parsedEdges = JSON.parse(savedEdges);
+            const updatedLocalEdges = parsedEdges.map((edge: any) => {
+              const newEdge = { ...edge };
+              if (idMapping[edge.source]) {
+                newEdge.source = idMapping[edge.source];
+              }
+              if (idMapping[edge.target]) {
+                newEdge.target = idMapping[edge.target];
+              }
+              if (typeof newEdge.sourceHandle === "string") {
+                Object.keys(idMapping).forEach((tempId) => {
+                  if (
+                    newEdge.sourceHandle &&
+                    newEdge.sourceHandle.includes(tempId)
+                  ) {
+                    newEdge.sourceHandle = newEdge.sourceHandle.replace(
+                      tempId,
+                      idMapping[tempId]
+                    );
+                  }
+                });
+              }
+              if (typeof newEdge.targetHandle === "string") {
+                Object.keys(idMapping).forEach((tempId) => {
+                  if (
+                    newEdge.targetHandle &&
+                    newEdge.targetHandle.includes(tempId)
+                  ) {
+                    newEdge.targetHandle = newEdge.targetHandle.replace(
+                      tempId,
+                      idMapping[tempId]
+                    );
+                  }
+                });
+              }
+              return newEdge;
+            });
+            localStorage.setItem(
+              LOCALSTORAGE_KEYS.EDGES,
+              JSON.stringify(updatedLocalEdges)
+            );
+          }
+        } catch (err) {
+          console.error(
+            "Failed to update edges in localStorage after ID remap:",
+            err
+          );
+        }
         const nodesToSave = nodes
           .filter((n) => !pendingChanges.deletedNodes.includes(n.id))
           .map((n) => {
@@ -274,7 +444,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
               data: n.data,
             };
           });
-
         const edgesToSave = updatedEdges
           .filter((e) => !pendingChanges.deletedEdges.includes(e.id))
           .map((e) => ({
@@ -283,13 +452,12 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
             target: e.target,
             sourceHandle: e.sourceHandle,
             targetHandle: e.targetHandle,
+            data: e.data,
           }));
-
         await saveMapMutation.mutateAsync({
           nodes: nodesToSave,
           edges: edgesToSave,
         });
-
         setPendingChanges({
           newNodes: [],
           updatedNodes: [],
@@ -298,10 +466,8 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           updatedEdges: [],
           deletedEdges: [],
         });
-
         setHistory([{ nodes, edges: updatedEdges }]);
         setHistoryIndex(0);
-
         addToast("All changes saved successfully!", "success");
       } catch (error) {
         console.error("Failed to save changes:", error);
@@ -318,19 +484,21 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       hasUnsavedChanges,
       isSaving,
       addToast,
+      setNodes,
+      setEdges,
+      setPendingChanges,
+      setHistory,
+      setHistoryIndex,
     ]);
 
-    // Auto-save effect
     useEffect(() => {
       if (!autoSaveEnabled || !hasUnsavedChanges() || !isInitialized) return;
-
       const intervalId = setInterval(() => {
         if (hasUnsavedChanges() && !isSaving) {
           console.log("Auto-saving changes...");
           saveMap();
         }
       }, autoSaveInterval);
-
       return () => clearInterval(intervalId);
     }, [
       autoSaveEnabled,
@@ -341,7 +509,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       isInitialized,
     ]);
 
-    // Keyboard shortcuts
     useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
         if (
@@ -368,12 +535,10 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           }
         }
       };
-
       document.addEventListener("keydown", handleKeyDown);
       return () => document.removeEventListener("keydown", handleKeyDown);
     }, [undo, redo, hasUnsavedChanges, isSaving, saveMap]);
 
-    // Snap to grid effect
     useEffect(() => {
       if (snapToGrid) {
         setNodes((currentNodes) => {
@@ -388,12 +553,10 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       }
     }, [snapToGrid, setNodes]);
 
-    // Event handlers
     const handleNodesChange = useCallback(
       (changes: any[]) => {
         onNodesChange(changes);
         changes.forEach((change) => {
-          // Only track non-position changes or position changes when not dragging
           if (change.type !== "position" || !dragStartPosition) {
             if (change.type === "position" && change.position) {
               setPendingChanges((prev) => ({
@@ -403,7 +566,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
             }
           }
         });
-        // Don't save to history during drag operations
         if (!dragStartPosition) {
           saveStateToHistory();
         }
@@ -460,33 +622,130 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
       }
     }, [onNodeSelect]);
 
-    const onConnect = useCallback(
-      (params: Connection) => {
-        const newEdge = {
-          ...params,
-          type: "mythsmith",
-          id: "temp_" + uuidv4(),
-        };
-        setEdges((eds) => addEdge(newEdge, eds));
-        setPendingChanges((prev) => ({
-          ...prev,
-          newEdges: [...new Set([...prev.newEdges, newEdge.id])],
-        }));
-        saveStateToHistory();
+    const handleExport = useCallback(
+      (format: "json" | "csv" | "graphml", filename?: string) => {
+        try {
+          // Convert flow nodes back to backend node format
+          const backendNodes = nodes.map((fNode) => ({
+            id: fNode.id,
+            data: fNode.data,
+            position: fNode.position,
+            createdAt: fNode.data.createdAt,
+            updatedAt: fNode.data.updatedAt,
+          }));
+          exportToFormat(backendNodes, edges, format, filename);
+          addToast(`Graph exported as ${format.toUpperCase()}`, "success");
+        } catch (error) {
+          console.error("Export failed:", error);
+          addToast("Failed to export graph", "error");
+        }
       },
-      [setEdges, saveStateToHistory]
+      [nodes, edges, addToast]
     );
 
-    // Action functions
+    const handleImport = useCallback(
+      async (file: File, mergeStrategy: "replace" | "merge") => {
+        try {
+          // Step 1: Validate the file
+          const importResult = await importGraphData(file);
+          if (!importResult.success) {
+            throw new Error(importResult.error);
+          }
+          if (!importResult.data) {
+            throw new Error("No data in import result");
+          }
+
+          // Step 2: Prepare data for backend
+          const importRequest = prepareImportData(
+            importResult.data,
+            mergeStrategy
+          );
+
+          // Step 3: Send to backend
+          const response = await apiService.import.importMap(importRequest);
+          console.log("Import response:", response);
+          setImportDetails({
+            nodesCreated: response.nodesCreated,
+            edgesCreated: response.edgesCreated,
+            conflicts: response.conflicts,
+            warnings: response.warnings,
+          });
+
+          // Step 4: Clear local storage to ensure fresh data from DB
+          localStorage.removeItem(LOCALSTORAGE_KEYS.NODES);
+          localStorage.removeItem(LOCALSTORAGE_KEYS.EDGES);
+          localStorage.removeItem(LOCALSTORAGE_KEYS.LAST_SAVED);
+          localStorage.removeItem(LOCALSTORAGE_KEYS.PENDING_CHANGES);
+
+          // Step 5: Show success message
+          let message = `Imported ${response.nodesCreated} nodes and ${response.edgesCreated} edges`;
+          if (response.conflicts && response.conflicts.length > 0) {
+            message += ` (${response.conflicts.length} conflicts resolved)`;
+          }
+          addToast(message, "success");
+
+          // Step 6: Show warnings if any
+          if (response.warnings && response.warnings.length > 0) {
+            const warningCount = response.warnings.length;
+            setTimeout(() => {
+              addToast(
+                `Import completed with ${warningCount} warnings`,
+                "warning"
+              );
+            }, 1000);
+          }
+
+          // Step 7: Reset graph state and force reload from DB
+          setNodes([]);
+          setEdges([]);
+          setHistory([]);
+          setHistoryIndex(0);
+          setPendingChanges({
+            newNodes: [],
+            updatedNodes: [],
+            deletedNodes: [],
+            newEdges: [],
+            updatedEdges: [],
+            deletedEdges: [],
+          });
+
+          // Step 8: Refresh data from backend
+          queryClient.invalidateQueries({ queryKey: nodeKeys.all });
+          queryClient.invalidateQueries({ queryKey: ["edges"] });
+          setShouldLoadFromDB(true);
+        } catch (error) {
+          console.error("Import failed:", error);
+          throw error;
+        }
+      },
+      [
+        queryClient,
+        setShouldLoadFromDB,
+        addToast,
+        setNodes,
+        setEdges,
+        setHistory,
+        setHistoryIndex,
+        setPendingChanges,
+      ]
+    );
+
+    const handleImportExportClick = useCallback(() => {
+      setImportExportModal({ isOpen: true });
+    }, []);
+
+    const handleImportExportClose = useCallback(() => {
+      setImportExportModal({ isOpen: false });
+    }, []);
+
     const loadNodes = useCallback(async () => {
       clearLocalStorage();
       setShouldLoadFromDB(true);
       addToast("Loading data from server...", "info");
-    }, [addToast]);
+    }, [addToast, setShouldLoadFromDB]);
 
     const addNode = useCallback(
       async (nodeData: CreateNodeRequest) => {
-        // Use a consistent UUID format for all nodes
         const tempId = `temp_${uuidv4()}`;
         const newFlowNode: FlowNode = {
           id: tempId,
@@ -496,16 +755,11 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           },
           type: "mythsmith",
         };
-
-        // Update local state
         setNodes((nds) => [...nds, newFlowNode]);
-
-        // Track as a new node that needs to be saved
         setPendingChanges((prev) => ({
           ...prev,
           newNodes: [...prev.newNodes, tempId],
         }));
-
         saveStateToHistory();
         return newFlowNode;
       },
@@ -514,32 +768,24 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
 
     const deleteNode = useCallback(
       async (nodeId: string) => {
-        // Check if this is a temporary node (starts with 'temp_')
         const isTempNode = nodeId.startsWith("temp_");
-
-        // If it's a real node (not temporary), call the API to delete it
         if (!isTempNode) {
           try {
-            await apiService.deleteNode(nodeId);
+            await apiService.nodes.deleteNode(nodeId);
           } catch (error) {
             console.error("Failed to delete node from backend:", error);
             addToast("Failed to delete node. Please try again.", "error");
-            return; // Don't update local state if API call fails
+            return;
           }
         }
-
-        // Update local state using the original ID
         setNodes((nds) => nds.filter((node) => node.id !== nodeId));
         setEdges((eds) =>
           eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
         );
-
-        // Update pending changes
         setPendingChanges((prev) => {
           const newDeletedNodes = isTempNode
-            ? prev.deletedNodes // Don't add temp nodes to deletedNodes since they were never in the backend
+            ? prev.deletedNodes
             : [...new Set([...prev.deletedNodes, nodeId])];
-
           return {
             ...prev,
             deletedNodes: newDeletedNodes,
@@ -547,8 +793,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
             updatedNodes: prev.updatedNodes.filter((id) => id !== nodeId),
           };
         });
-
-        // Update localStorage by removing the node from saved data
         if (isInitialized) {
           try {
             const savedNodes = localStorage.getItem(LOCALSTORAGE_KEYS.NODES);
@@ -562,7 +806,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
                 JSON.stringify(updatedNodes)
               );
             }
-
             const savedEdges = localStorage.getItem(LOCALSTORAGE_KEYS.EDGES);
             if (savedEdges) {
               const parsedEdges = JSON.parse(savedEdges);
@@ -578,24 +821,9 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
             console.error("Failed to update localStorage:", error);
           }
         }
-
-        if (onNodesUpdated) {
-          const remainingBackendNodes = nodes
-            .filter((fNode) => fNode.id !== nodeId)
-            .map((fNode) => ({
-              id: fNode.id,
-              data: fNode.data,
-              position: fNode.position,
-              createdAt: fNode.data.createdAt,
-              updatedAt: fNode.data.updatedAt,
-            }));
-          onNodesUpdated(remainingBackendNodes);
-        }
-
         if (onNodeSelect) {
           onNodeSelect(null);
         }
-
         saveStateToHistory();
         addToast("Node deleted successfully", "success");
       },
@@ -603,8 +831,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
         setNodes,
         setEdges,
         onNodeSelect,
-        onNodesUpdated,
-        nodes,
         saveStateToHistory,
         addToast,
         isInitialized,
@@ -617,31 +843,23 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
         if (!nodeToUpdate) {
           return Promise.reject(new Error(`Node with ID ${nodeId} not found`));
         }
-
         const { position: newPosition, ...updateData } = updates;
         const updatedNode = {
           ...nodeToUpdate,
           data: { ...nodeToUpdate.data, ...updateData },
           position: newPosition || nodeToUpdate.position,
         };
-
-        // Update local state
         setNodes((nds) => nds.map((n) => (n.id === nodeId ? updatedNode : n)));
-
-        // Track as an updated node that needs to be saved
         setPendingChanges((prev) => ({
           ...prev,
           updatedNodes: [...new Set([...prev.updatedNodes, nodeId])],
         }));
-
         saveStateToHistory();
-
         const backendNode = {
           id: updatedNode.id,
           data: updatedNode.data,
           position: updatedNode.position,
         };
-
         return Promise.resolve(backendNode as Node);
       },
       [nodes, setNodes, saveStateToHistory]
@@ -681,6 +899,9 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
           onNodeClick={handleNodeClick}
           onPaneClick={handlePaneClick}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          isValidConnection={isValidConnection}
+          connectionMode={ConnectionMode.Loose}
           fitView
           attributionPosition="bottom-left"
           proOptions={{ hideAttribution: true }}
@@ -710,72 +931,10 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
               hasUnsavedChanges={hasUnsavedChanges()}
               onSave={saveMap}
               isSaving={isSaving}
+              onImportExport={handleImportExportClick}
+              nodeCount={nodes.length}
+              edgeCount={edges.length}
             />
-          </Panel>
-
-          <Panel position="bottom-right">
-            <div className="flex flex-col gap-2 bg-black/80 p-2 rounded text-white">
-              <div className="flex gap-1">
-                <button
-                  onClick={undo}
-                  disabled={historyIndex <= 0}
-                  className={`px-2 py-1 rounded text-xs ${
-                    historyIndex <= 0
-                      ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                      : "bg-blue-600 text-white cursor-pointer"
-                  }`}
-                  title="Undo (Ctrl+Z)"
-                >
-                  ↶ Undo
-                </button>
-                <button
-                  onClick={redo}
-                  disabled={historyIndex >= history.length - 1}
-                  className={`px-2 py-1 rounded text-xs ${
-                    historyIndex >= history.length - 1
-                      ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                      : "bg-blue-600 text-white cursor-pointer"
-                  }`}
-                  title="Redo (Ctrl+Y)"
-                >
-                  ↷ Redo
-                </button>
-              </div>
-              <div className="border-t border-gray-600 pt-1 mt-1">
-                <div className="flex items-center gap-1 mb-1">
-                  <input
-                    type="checkbox"
-                    id="autoSave"
-                    checked={autoSaveEnabled}
-                    onChange={(e) => setAutoSaveEnabled(e.target.checked)}
-                    className="cursor-pointer"
-                  />
-                  <label htmlFor="autoSave" className="text-xs cursor-pointer">
-                    Auto-save
-                  </label>
-                </div>
-                {autoSaveEnabled && (
-                  <div className="flex items-center gap-1">
-                    <label htmlFor="autoSaveInterval" className="text-xs">
-                      Every:
-                    </label>
-                    <select
-                      id="autoSaveInterval"
-                      value={autoSaveInterval / 1000}
-                      onChange={(e) =>
-                        setAutoSaveInterval(Number(e.target.value) * 1000)
-                      }
-                      className="bg-gray-800 text-white border border-gray-600 rounded px-1 text-xs"
-                    >
-                      <option value="15">15s</option>
-                      <option value="30">30s</option>
-                      <option value="60">1m</option>
-                      <option value="300">5m</option>
-                    </select>
-                  </div>
-                )}
-              </div>
-            </div>
           </Panel>
           <MiniMap
             nodeColor={(node) => {
@@ -797,6 +956,26 @@ export const WorldGraph = forwardRef<WorldGraphRef, WorldGraphProps>(
             color="#4a5568"
           />
         </ReactFlow>
+        <ConnectionModal
+          isOpen={connectionModal.isOpen}
+          onClose={() => {
+            setConnectionModal((prev) => ({ ...prev, isOpen: false }));
+            setPendingConnection(null);
+          }}
+          onCreate={handleCreateConnection}
+          sourceNodeName={connectionModal.sourceNodeName}
+          targetNodeName={connectionModal.targetNodeName}
+          suggestedType={connectionModal.suggestedType}
+        />
+        <ImportExportModal
+          importDetails={importDetails}
+          isOpen={importExportModal.isOpen}
+          onClose={handleImportExportClose}
+          onImport={handleImport}
+          onExport={handleExport}
+          nodeCount={nodes.length}
+          edgeCount={edges.length}
+        />
       </div>
     );
   }

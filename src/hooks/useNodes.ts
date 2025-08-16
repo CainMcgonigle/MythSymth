@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiService } from "../services/api";
+import { apiService } from "../services/apiService";
 import { CreateNodeRequest, UpdateNodeRequest, NodeType } from "../types";
+import { flattenNodes } from "@/utils/flattenNodeData";
 
-// Query Keys
 export const nodeKeys = {
   all: ["nodes"] as const,
   lists: () => [...nodeKeys.all, "list"] as const,
@@ -11,38 +11,36 @@ export const nodeKeys = {
   detail: (id: string) => [...nodeKeys.details(), id] as const,
 };
 
-// Hook to fetch all nodes with optional type filter
 export const useNodes = (type?: NodeType) => {
   return useQuery({
     queryKey: nodeKeys.list(type),
-    queryFn: () => apiService.getNodes(type),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+    queryFn: async () => {
+      const nodes = await apiService.nodes.getNodes(type);
+      return flattenNodes(nodes);
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 };
 
-// Hook to fetch a single node
 export const useNode = (id: string, enabled = true) => {
   return useQuery({
     queryKey: nodeKeys.detail(id),
-    queryFn: () => apiService.getNode(id),
+    queryFn: () => apiService.nodes.getNode(id),
     enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
 };
 
-// Hook to create a new node
 export const useCreateNode = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (node: CreateNodeRequest) => apiService.createNode(node),
+    mutationFn: (node: CreateNodeRequest) => apiService.nodes.createNode(node),
     onSuccess: (newNode) => {
-      // Invalidate and refetch nodes list
       queryClient.invalidateQueries({ queryKey: nodeKeys.lists() });
 
-      // Optionally add the new node to the cache
       queryClient.setQueryData(nodeKeys.detail(newNode.id), newNode);
     },
     onError: (error) => {
@@ -51,18 +49,15 @@ export const useCreateNode = () => {
   });
 };
 
-// Hook to update a node
 export const useUpdateNode = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: UpdateNodeRequest }) =>
-      apiService.updateNode(id, updates),
+      apiService.nodes.updateNode(id, updates),
     onSuccess: (updatedNode, { id }) => {
-      // Update the node in the cache
       queryClient.setQueryData(nodeKeys.detail(id), updatedNode);
 
-      // Invalidate nodes list to ensure consistency
       queryClient.invalidateQueries({ queryKey: nodeKeys.lists() });
     },
     onError: (error) => {
@@ -71,19 +66,16 @@ export const useUpdateNode = () => {
   });
 };
 
-// Hook to delete a node
 export const useDeleteNode = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => apiService.deleteNode(id),
+    mutationFn: (id: string) => apiService.nodes.deleteNode(id),
     onSuccess: (_, deletedId) => {
-      // Remove the node from cache
       queryClient.removeQueries({
         queryKey: nodeKeys.detail(deletedId),
       });
 
-      // Invalidate nodes list
       queryClient.invalidateQueries({ queryKey: nodeKeys.lists() });
     },
     onError: (error) => {
@@ -92,15 +84,13 @@ export const useDeleteNode = () => {
   });
 };
 
-// Hook to update node positions (bulk update)
 export const useUpdateNodePositions = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (positions: Array<{ id: number; x: number; y: number }>) =>
-      apiService.updateNodePositions(positions),
+      apiService.nodes.updateNodePositions(positions),
     onSuccess: () => {
-      // Invalidate all node queries to refetch updated positions
       queryClient.invalidateQueries({ queryKey: nodeKeys.all });
     },
     onError: (error) => {
@@ -109,13 +99,12 @@ export const useUpdateNodePositions = () => {
   });
 };
 
-// Hook to check API health
 export const useApiHealth = () => {
   return useQuery({
     queryKey: ["api", "health"],
-    queryFn: () => apiService.checkHealth(),
-    refetchInterval: 30000, // Check every 30 seconds
+    queryFn: () => apiService.health.checkHealth(),
+    refetchInterval: 30000,
     retry: 1,
-    staleTime: 0, // Always consider stale for health checks
+    staleTime: 0,
   });
 };

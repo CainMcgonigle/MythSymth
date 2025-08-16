@@ -136,7 +136,6 @@ export const useGraphState = () => {
   }, [history, historyIndex, setNodes, setEdges]);
 
   return {
-    // State
     nodes,
     edges,
     pendingChanges,
@@ -150,7 +149,6 @@ export const useGraphState = () => {
     autoSaveEnabled,
     autoSaveInterval,
 
-    // Setters
     setNodes,
     setEdges,
     setPendingChanges,
@@ -164,7 +162,6 @@ export const useGraphState = () => {
     setAutoSaveEnabled,
     setAutoSaveInterval,
 
-    // Actions
     onNodesChange,
     onEdgesChange,
     hasUnsavedChanges,

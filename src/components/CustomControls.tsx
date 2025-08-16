@@ -8,23 +8,29 @@ import {
   MousePointer2,
   Save,
   Timer,
+  Download,
+  Upload,
 } from "lucide-react";
 
-// The new props for interactivity and additional controls
 interface CustomControlsProps {
   snapToGrid: boolean;
   setSnapToGrid: (value: boolean) => void;
   isInteractive: boolean;
   setIsInteractive: (value: boolean) => void;
-  // Auto-save props
+
   autoSaveEnabled: boolean;
   setAutoSaveEnabled: (value: boolean) => void;
   autoSaveInterval: number;
   setAutoSaveInterval: (value: number) => void;
-  // Save props
+
   hasUnsavedChanges: boolean;
   onSave: () => void;
   isSaving: boolean;
+
+  // New props for import/export
+  onImportExport: () => void;
+  nodeCount: number;
+  edgeCount: number;
 }
 
 const CustomControls: React.FC<CustomControlsProps> = ({
@@ -39,18 +45,19 @@ const CustomControls: React.FC<CustomControlsProps> = ({
   hasUnsavedChanges,
   onSave,
   isSaving,
+  onImportExport,
+  nodeCount,
+  edgeCount,
 }) => {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const [showIntervalPopup, setShowIntervalPopup] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
 
-  // Format auto-save interval for display
   const formatInterval = (ms: number) => {
     if (ms < 60000) return `${ms / 1000}s`;
     return `${ms / 60000}m`;
   };
 
-  // Close popup when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -67,7 +74,6 @@ const CustomControls: React.FC<CustomControlsProps> = ({
     };
   }, []);
 
-  // Auto-save interval options
   const intervalOptions = [
     { value: 15, label: "15 seconds" },
     { value: 30, label: "30 seconds" },
@@ -77,8 +83,8 @@ const CustomControls: React.FC<CustomControlsProps> = ({
 
   return (
     <div className="flex flex-col space-y-2">
-      {/* View Controls */}
-      <div className="react-flow__controls bg-gray-800 border border-gray-600 rounded-lg p-1">
+      {/* Zoom Controls */}
+      <div className="react-flow__controls">
         <button
           className="react-flow__controls-button text-gray-700 hover:text-gray-900"
           title="zoom in"
@@ -114,8 +120,8 @@ const CustomControls: React.FC<CustomControlsProps> = ({
         </button>
       </div>
 
-      {/* Save Controls */}
-      <div className="react-flow__controls bg-gray-800 border border-gray-600 rounded-lg p-1">
+      {/* Save Control */}
+      <div className="react-flow__controls">
         <button
           className={`react-flow__controls-button ${
             hasUnsavedChanges && !isSaving
@@ -141,11 +147,20 @@ const CustomControls: React.FC<CustomControlsProps> = ({
             <Save size={16} />
           )}
         </button>
+
+        <button
+          className="react-flow__controls-button text-gray-700 hover:text-blue-500"
+          title={`Import/Export Graph (${nodeCount} nodes, ${edgeCount} edges)`}
+          aria-label="import export graph"
+          onClick={onImportExport}
+        >
+          <Download size={16} />
+        </button>
       </div>
 
-      {/* Settings Controls */}
-      <div className="react-flow__controls bg-gray-800 border border-gray-600 rounded-lg p-1 relative">
-        {/* The new button toggles the `isInteractive` state */}
+      {/* Graph Controls */}
+      <div className="react-flow__controls">
+        {/* Interactivity Toggle */}
         <button
           className={`react-flow__controls-button ${
             isInteractive ? "text-gray-700" : "text-blue-500"
@@ -157,7 +172,7 @@ const CustomControls: React.FC<CustomControlsProps> = ({
           {isInteractive ? <MousePointer2 size={16} /> : <Hand size={16} />}
         </button>
 
-        {/* Your custom snap button */}
+        {/* Snap to Grid Toggle */}
         <button
           className={`react-flow__controls-button ${
             !snapToGrid ? "text-gray-400" : "text-blue-500"
@@ -169,7 +184,7 @@ const CustomControls: React.FC<CustomControlsProps> = ({
           <Grid3X3Icon size={16} />
         </button>
 
-        {/* Auto-save toggle with interval popup */}
+        {/* Auto-save Control */}
         <div className="relative">
           <button
             className={`react-flow__controls-button ${
@@ -192,7 +207,7 @@ const CustomControls: React.FC<CustomControlsProps> = ({
             <Timer size={16} />
           </button>
 
-          {/* Auto-save interval popup */}
+          {/* Auto-save Interval Popup */}
           {autoSaveEnabled && showIntervalPopup && (
             <div
               ref={popupRef}

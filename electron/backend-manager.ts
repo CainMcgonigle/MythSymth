@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from "child_process";
 import path, { join } from "path";
 import { app } from "electron";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 
 export class BackendManager {
   private process: ChildProcess | null = null;
@@ -20,14 +20,20 @@ export class BackendManager {
       throw new Error(`Backend binary not found at: ${backendPath}`);
     }
 
+    // ✅ Ensure data dir exists
+    const dataDir = join(app.getPath("userData"), "data");
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
+    }
+
     console.log(`Starting backend from: ${backendPath}`);
+    console.log(`Using data dir: ${dataDir}`);
 
     this.process = spawn(backendPath, [`--port=${this.port}`], {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        // Set working directory for database
-        MYTHSMITH_DATA_DIR: join(app.getPath("userData"), "data"),
+        MYTHSMITH_DATA_DIR: dataDir,
       },
     });
 
@@ -48,7 +54,6 @@ export class BackendManager {
       this.process = null;
     });
 
-    // Wait for backend to be ready
     await this.waitForBackend();
   }
 
@@ -74,17 +79,14 @@ export class BackendManager {
     const extension = platform === "win32" ? ".exe" : "";
 
     if (isDev) {
-      // Correct path to the binary compiled by npm run build:backend
-      // The __dirname is dist-electron, so we go up one directory (..) and into dist/backend
       return path.join(
         __dirname,
-        "../dist/backend/mythsmith-backend" + extension,
+        "../dist/backend/mythsmith-backend" + extension
       );
     } else {
-      // In production, use the binary from resources (this remains unchanged)
       return path.join(
         process.resourcesPath,
-        "backend/mythsmith-backend" + extension,
+        "backend/mythsmith-backend" + extension
       );
     }
   }
@@ -98,7 +100,7 @@ export class BackendManager {
           return;
         }
       } catch {
-        // Backend not ready yet, continue waiting
+        // Ignore connection errors while waiting
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1000));

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiService } from "../services/api";
+import { apiService } from "../services/apiService";
 import { nodeKeys } from "../hooks/useNodes";
 import { CreateNodeMutationVariables } from "../types/graphTypes";
 import { LOCALSTORAGE_KEYS } from "@/constants/graphConstants";
@@ -9,7 +9,7 @@ export const useGraphMutations = () => {
 
   const saveMapMutation = useMutation({
     mutationFn: (mapData: { nodes: any[]; edges: any[] }) =>
-      apiService.saveMap(mapData),
+      apiService.map.saveMap(mapData),
     onSuccess: () => {
       console.log("Map saved successfully!");
       localStorage.setItem(
@@ -26,7 +26,7 @@ export const useGraphMutations = () => {
 
   const createNodeMutation = useMutation({
     mutationFn: (variables: CreateNodeMutationVariables) =>
-      apiService.createNode(variables),
+      apiService.nodes.createNode(variables),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: nodeKeys.lists() });
     },

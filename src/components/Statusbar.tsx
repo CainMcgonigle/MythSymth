@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Node } from "../types";
-import { apiService } from "../services/api";
+import { apiService } from "../services/apiService";
 import {
   Database,
   BarChart2,
@@ -32,7 +32,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   useEffect(() => {
     const checkBackendStatus = async () => {
       try {
-        const healthy = await apiService.checkHealth();
+        const healthy = await apiService.health.checkHealth();
         setBackendStatus(healthy ? "connected" : "disconnected");
         if (healthy) {
           setLastSaved(new Date());
@@ -56,7 +56,6 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     });
   };
 
-  // Refactored to return a Tailwind CSS class
   const getStatusColorClass = () => {
     switch (backendStatus) {
       case "connected":

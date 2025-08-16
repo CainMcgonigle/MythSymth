@@ -1,3 +1,18 @@
+import {
+  CharacterNodeData,
+  FactionNodeData,
+  CityNodeData,
+  EventNodeData,
+  LocationNodeData,
+} from "./nodeTypes";
+
+export type ExtendedNodeData =
+  | CharacterNodeData
+  | FactionNodeData
+  | CityNodeData
+  | EventNodeData
+  | LocationNodeData;
+
 export type NodeType = "character" | "faction" | "city" | "event" | "location";
 export type ConnectionDirection = "vertical" | "horizontal" | "all";
 
@@ -12,15 +27,15 @@ export interface NodeData {
 export interface Node {
   id: string;
   position: { x: number; y: number };
-  data: NodeData;
+  data: ExtendedNodeData;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface Edge {
   id: string;
-  source: number;
-  target: number;
+  source: string;
+  target: string;
   sourceHandle?: string | null;
   targetHandle?: string | null;
   createdAt?: string;
@@ -33,7 +48,7 @@ export interface MapData {
 }
 
 export interface CreateNodeRequest {
-  id: string;
+  id?: string;
   name: string;
   type: NodeType;
   description?: string;
@@ -65,4 +80,9 @@ declare global {
   interface Window {
     electronAPI?: ElectronAPI;
   }
+}
+
+export interface NodeFormProps {
+  data: CreateNodeRequest;
+  setData: React.Dispatch<React.SetStateAction<CreateNodeRequest>>;
 }

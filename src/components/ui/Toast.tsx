@@ -37,7 +37,7 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
       const id = Math.random().toString(36).substr(2, 9);
       setToasts((prev) => [...prev, { id, message, type, duration }]);
 
-      // Auto-remove toast after duration
+      
       setTimeout(() => {
         removeToast(id);
       }, duration);

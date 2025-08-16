@@ -2,8 +2,6 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { join } from "path";
 import { BackendManager } from "./backend-manager";
 
-// Check if the app is in development mode.
-// This is set via the NODE_ENV=development environment variable in the package.json script.
 const isDev = process.env.NODE_ENV === "development";
 
 let mainWindow: BrowserWindow | null;
@@ -18,12 +16,12 @@ const createWindow = (): void => {
       contextIsolation: true,
       preload: join(__dirname, "preload.js"),
     },
-    // Set 'frame: false' to hide the default top bar
+
     frame: false,
   });
 
   if (isDev) {
-    mainWindow.loadURL("http://localhost:5173");
+    mainWindow.loadURL("http://localhost:3000");
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(join(__dirname, "../dist/index.html"));
@@ -31,13 +29,11 @@ const createWindow = (): void => {
 };
 
 app.whenReady().then(async () => {
-  // Start the Go backend
   backendManager = new BackendManager();
   await backendManager.start();
 
   createWindow();
 
-  // Maximize the window after it has been created
   if (mainWindow) {
     mainWindow.maximize();
   }
@@ -61,7 +57,6 @@ app.on("before-quit", async () => {
   }
 });
 
-// IPC handlers for backend communication
 ipcMain.handle("get-backend-url", () => {
   return backendManager?.getUrl() || "http://localhost:8080";
 });

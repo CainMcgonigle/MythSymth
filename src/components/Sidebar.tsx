@@ -101,13 +101,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  const displayNodes =
-    filteredNodes ||
-    (filter === "all"
-      ? nodes
-      : nodes.filter((node) => node.data.type === filter));
+  // Use filtered nodes if provided, otherwise filter nodes based on current filter
+  const displayNodes = React.useMemo(() => {
+    if (filteredNodes) {
+      return filteredNodes;
+    }
 
-  const getNodeCounts = () => {
+    return filter === "all"
+      ? nodes
+      : nodes.filter((node) => node.data.type === filter);
+  }, [filteredNodes, nodes, filter]);
+
+  // Calculate node counts based on current nodes array
+  const getNodeCounts = React.useMemo(() => {
     const counts = {
       all: nodes.length,
       character: 0,
@@ -118,13 +124,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     nodes.forEach((node) => {
-      counts[node.data.type]++;
+      if (node.data.type in counts) {
+        counts[node.data.type]++;
+      }
     });
 
     return counts;
-  };
+  }, [nodes]);
 
-  const counts = getNodeCounts();
+  // Check if selected node still exists in the current nodes array
+  const isSelectedNodeValid = React.useMemo(() => {
+    if (!selectedNode) return true;
+    return nodes.some((node) => node.id === selectedNode.id);
+  }, [selectedNode, nodes]);
+
+  // If selected node no longer exists, we should show it as invalid but not auto-clear
+  // This allows the parent component to handle the cleanup
 
   return (
     <div
@@ -135,7 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ${isOpen ? "w-80" : "w-0 overflow-hidden"}
     `}
     >
-      {/* Opacity transition added to the sidebar header */}
+      {/* Header */}
       <div
         className={`
         sidebar-header px-4 py-3 border-b border-gray-700
@@ -151,7 +166,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={option.key}
               onClick={() => onFilterChange(option.key)}
-              title={`${option.label} (${counts[option.key]})`}
+              title={`${option.label} (${getNodeCounts[option.key]})`}
               className={`
                 flex items-center space-x-1.5 
                 px-3 py-1.5 rounded-full text-sm font-medium
@@ -173,7 +188,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 select-none
               `}
               >
-                {counts[option.key]}
+                {getNodeCounts[option.key]}
               </span>
             </button>
           ))}
@@ -200,59 +215,97 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {displayNodes.map((node) => (
-              <div
-                key={node.id}
-                onClick={() => onNodeSelect(node)}
-                className={`
-                  cursor-pointer flex items-center space-x-3 p-2 rounded-md group
-                  transition-colors duration-150 relative
-                  ${
-                    selectedNode?.id === node.id
-                      ? "bg-indigo-800/40 border-l-4 border-indigo-500 pl-[12px]"
-                      : "hover:bg-neutral-600"
-                  }
-                `}
-              >
-                <div className="node-icon inline-flex items-center">
-                  {getNodeIcon(
-                    node.data.type,
+            {displayNodes.map((node) => {
+              const isSelected = selectedNode?.id === node.id;
+              const isValidSelection = isSelected && isSelectedNodeValid;
+
+              return (
+                <div
+                  key={node.id}
+                  onClick={() => onNodeSelect(node)}
+                  className={`
+                    cursor-pointer flex items-center space-x-3 p-2 rounded-md group
+                    transition-colors duration-150 relative
+                    ${
+                      isValidSelection
+                        ? "bg-indigo-800/40 border-l-4 border-indigo-500 pl-[12px]"
+                        : isSelected && !isSelectedNodeValid
+                          ? "bg-red-800/40 border-l-4 border-red-500 pl-[12px]"
+                          : "hover:bg-neutral-600"
+                    }
+                  `}
+                >
+                  <div className="node-icon inline-flex items-center">
+                    {getNodeIcon(
+                      node.data.type,
+                      `
+                      ${
+                        isValidSelection
+                          ? "text-indigo-400"
+                          : isSelected && !isSelectedNodeValid
+                            ? "text-red-400"
+                            : "group-hover:text-indigo-400"
+                      }
                     `
-                    ${selectedNode?.id === node.id ? "text-indigo-400" : "group-hover:text-indigo-400"}
-                  `
-                  )}
-                </div>
-                <div className="node-info flex flex-col overflow-hidden">
-                  <div
-                    className={`
-                    node-name font-semibold truncate
-                    ${selectedNode?.id === node.id ? "text-white" : "text-gray-200 group-hover:text-white"}
-                  `}
-                  >
-                    {node.data.name}
+                    )}
                   </div>
-                  <div
-                    className={`
-                    text-xs font-medium uppercase
-                    ${selectedNode?.id === node.id ? "text-indigo-300" : `${iconColors[node.data.type]} group-hover:text-indigo-300`}
-                  `}
-                  >
-                    {node.data.type}
-                  </div>
-                  {node.data.description && (
+                  <div className="node-info flex flex-col overflow-hidden">
                     <div
                       className={`
-                      text-xs text-gray-400 mt-1 leading-tight
-                      line-clamp-2 overflow-hidden
-                      ${selectedNode?.id === node.id ? "text-gray-300" : "group-hover:text-gray-300"}
+                      node-name font-semibold truncate
+                      ${
+                        isValidSelection
+                          ? "text-white"
+                          : isSelected && !isSelectedNodeValid
+                            ? "text-red-200"
+                            : "text-gray-200 group-hover:text-white"
+                      }
                     `}
                     >
-                      {node.data.description}
+                      {node.data.name}
+                    </div>
+                    <div
+                      className={`
+                      text-xs font-medium uppercase
+                      ${
+                        isValidSelection
+                          ? "text-indigo-300"
+                          : isSelected && !isSelectedNodeValid
+                            ? "text-red-300"
+                            : `${iconColors[node.data.type]} group-hover:text-indigo-300`
+                      }
+                    `}
+                    >
+                      {node.data.type}
+                    </div>
+                    {node.data.description && (
+                      <div
+                        className={`
+                        text-xs text-gray-400 mt-1 leading-tight
+                        line-clamp-2 overflow-hidden
+                        ${
+                          isValidSelection
+                            ? "text-gray-300"
+                            : isSelected && !isSelectedNodeValid
+                              ? "text-red-300"
+                              : "group-hover:text-gray-300"
+                        }
+                      `}
+                      >
+                        {node.data.description}
+                      </div>
+                    )}
+                  </div>
+                  {isSelected && !isSelectedNodeValid && (
+                    <div className="absolute top-1 right-1">
+                      <div className="text-xs bg-red-600 text-red-100 px-1 py-0.5 rounded text-center leading-none">
+                        Deleted
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

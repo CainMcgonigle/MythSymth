@@ -8,6 +8,6 @@ export const LOCALSTORAGE_KEYS = {
   AUTO_SAVE_INTERVAL: "worldgraph_auto_save_interval",
 };
 
-export const DEFAULT_AUTO_SAVE_INTERVAL = 30000; // 30 seconds
+export const DEFAULT_AUTO_SAVE_INTERVAL = 30000; 
 export const MAX_HISTORY_SIZE = 50;
 export const GRID_SIZE = 15;

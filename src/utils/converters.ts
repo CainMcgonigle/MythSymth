@@ -5,7 +5,7 @@ import { Node, NodeType, ConnectionDirection } from "../types";
  * This is used for internal operations where a nested data/position object isn't needed.
  */
 export interface SimplifiedNode {
-  id: number;
+  id: string;
   name: string;
   type: NodeType;
   description: string;
@@ -52,8 +52,8 @@ export function toBackendNode(simplifiedNode: SimplifiedNode): Node {
       x: simplifiedNode.x,
       y: simplifiedNode.y,
     },
-    // The simplified node doesn't have these, so we'll use stubs.
-    // Consider adding them to SimplifiedNode if you need them.
+    
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

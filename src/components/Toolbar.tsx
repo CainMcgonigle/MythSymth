@@ -77,18 +77,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
   return (
     <div className="relative flex justify-between items-center bg-neutral-900 border-b border-gray-700 shadow-lg h-[56px] pr-4 pl-4">
-      {/* Left side: Sidebar toggle, create button, quick create buttons */}
+      {}
       <div className="flex items-center gap-2 h-full">
         <button
           onClick={onToggleSidebar}
           title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
           className="flex items-center gap-1.5 font-semibold text-gray-300 hover:text-white px-2 h-full rounded-md transition-colors duration-150"
         >
-          {/* Conditional icon rendering */}
+          {}
           {isSidebarOpen ? <PanelLeftClose size={18} /> : <Menu size={18} />}
         </button>
 
-        {/* Updated 'Create' button for a more subtle look */}
+        {}
         <button
           onClick={onCreateNode}
           title="Create New Node"
@@ -97,7 +97,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Plus size={18} />
         </button>
 
-        {/* Updated Quick Create buttons with text labels */}
+        {}
         <div className="flex gap-2">
           {quickCreateOptions.map((option) => (
             <button
@@ -117,7 +117,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
 
-      {/* Center: App title - absolutely centered */}
+      {}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center font-semibold text-orange-400 text-lg select-none pointer-events-none">
         <img
           src="/assets/android-chrome-192x192.png"
@@ -126,7 +126,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         />
         <span>MythSmith</span>
       </div>
-      {/* Right side: Selected node info, help */}
+      {}
       <div className="flex items-center space-x-3 text-gray-300">
         {selectedNode && (
           <>

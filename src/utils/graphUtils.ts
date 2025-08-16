@@ -11,14 +11,19 @@ export const convertToFlowNode = (node: Node): FlowNode => ({
   type: "mythsmith",
 });
 
-export const convertToFlowEdge = (edge: Edge): FlowEdge => ({
-  id: String(edge.id),
-  source: String(edge.source),
-  target: String(edge.target),
-  sourceHandle: edge.sourceHandle || undefined,
-  targetHandle: edge.targetHandle || undefined,
-  animated: true,
-});
+export const convertToFlowEdge = (edge: Edge): FlowEdge => {
+  
+  const { id, source, target, sourceHandle, targetHandle, ...rest } = edge;
+  return {
+    id: String(id),
+    source: String(source),
+    target: String(target),
+    sourceHandle: sourceHandle || undefined,
+    targetHandle: targetHandle || undefined,
+    type: "mythsmith",
+    data: { ...rest },
+  };
+};
 
 export const initializeFromLocalStorage = () => {
   const savedNodes = localStorage.getItem(LOCALSTORAGE_KEYS.NODES);

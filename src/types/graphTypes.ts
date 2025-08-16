@@ -1,5 +1,5 @@
 import { Node as FlowNode, Edge as FlowEdge } from "reactflow";
-import { Node, CreateNodeRequest, UpdateNodeRequest } from "@/types";
+import { Node, CreateNodeRequest, UpdateNodeRequest, Edge } from "@/types";
 
 export interface PendingChanges {
   newNodes: string[];
@@ -13,6 +13,7 @@ export interface PendingChanges {
 export interface WorldGraphProps {
   onNodeSelect?: (node: Node | null) => void;
   onNodesUpdated?: (nodes: Node[]) => void;
+  onEdgesUpdated?: (edges: Edge[]) => void;
 }
 
 export interface WorldGraphRef {
