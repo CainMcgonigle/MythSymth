@@ -3,7 +3,6 @@ import { join } from "path";
 import { BackendManager } from "./backend-manager";
 
 const isDev = process.env.NODE_ENV === "development";
-
 let mainWindow: BrowserWindow | null;
 let backendManager: BackendManager;
 
@@ -15,20 +14,29 @@ const createWindow = (): void => {
       nodeIntegration: false,
       contextIsolation: true,
       preload: join(__dirname, "preload.js"),
+      // Add these to prevent CORS issues
+      webSecurity: false,
+      allowRunningInsecureContent: true,
     },
-
     frame: false,
   });
 
   if (isDev) {
-    mainWindow.loadURL("http://localhost:3000");
+    // Frontend runs on port 5173 in development
+    mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, "../dist/index.html"));
+    // In production, we need to handle CORS properly
+    // Option 1: Serve frontend from backend (recommended)
+    mainWindow.loadURL("http://localhost:8080");
+
+    // Option 2: Load local file with proper headers
+    // mainWindow.loadFile(join(__dirname, "../dist/index.html"));
   }
 };
 
 app.whenReady().then(async () => {
+  // Start backend on port 8080
   backendManager = new BackendManager();
   await backendManager.start();
 
@@ -57,10 +65,12 @@ app.on("before-quit", async () => {
   }
 });
 
+// IPC handler to get backend URL (port 8080)
 ipcMain.handle("get-backend-url", () => {
   return backendManager?.getUrl() || "http://localhost:8080";
 });
 
+// IPC handler to check backend status
 ipcMain.handle("backend-status", () => {
   return backendManager?.isRunning() || false;
 });

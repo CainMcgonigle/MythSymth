@@ -11,21 +11,20 @@ import { Edit, Trash2, FastForward, SquarePause } from "lucide-react";
 import ConnectionModal from "../ConnectionModal";
 import { createPortal } from "react-dom";
 
-function hexToRgba(hex: string, opacity: number): string {
-  let r = 0,
-    g = 0,
-    b = 0;
-  hex = hex.replace("#", "");
-  if (hex.length === 3) {
-    r = parseInt(hex[0] + hex[0], 16);
-    g = parseInt(hex[1] + hex[1], 16);
-    b = parseInt(hex[2] + hex[2], 16);
-  } else if (hex.length === 6) {
-    r = parseInt(hex.substring(0, 2), 16);
-    g = parseInt(hex.substring(2, 4), 16);
-    b = parseInt(hex.substring(4, 6), 16);
+function hexToRgba(hex?: string, alpha = 1, darken = 0): string {
+  if (!hex) {
+    return `rgba(107, 114, 128, ${alpha})`; // fallback to gray (#6b7280)
   }
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+
+  const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+  hex = hex.replace(shorthandRegex, (_m, r, g, b) => r + r + g + g + b + b);
+
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? `rgba(${parseInt(result[1], 16) * (1 - darken)}, ${parseInt(result[2], 16) * (1 - darken)}, ${
+        parseInt(result[3], 16) * (1 - darken)
+      }, ${alpha})`
+    : `rgba(107, 114, 128, ${alpha})`; // fallback if invalid hex
 }
 
 // Helper function to calculate angle at start/end of Bezier curve
@@ -555,7 +554,13 @@ const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = React.memo(
           /* Regular unidirectional edge */
           <BaseEdge
             path={edgePath}
-            style={{ ...edgeStyles, pointerEvents: "none" }}
+            style={{
+              ...edgeStyles,
+              pointerEvents: "none",
+              animation: data?.animated
+                ? "dash-flow 2s linear infinite"
+                : "none",
+            }}
             {...getMarkers()}
           />
         )}
@@ -604,12 +609,14 @@ const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = React.memo(
               style={{
                 position: "absolute",
                 transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-                fontSize: 12,
+                fontSize: 14,
                 pointerEvents: "none",
                 userSelect: "none",
-                backgroundColor: hexToRgba(edgeColor, 0.9),
+                backgroundColor: hexToRgba(edgeColor, 0.75),
                 padding: "2px 6px",
-                borderRadius: 5,
+                borderRadius: 50,
+                borderColor: hexToRgba(edgeColor, 0.75, 0.5),
+                borderWidth: 1,
                 color: "#fff",
               }}
               className="nodrag nopan"
