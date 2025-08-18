@@ -47,7 +47,7 @@ const ConnectionAnalyticsPanel: React.FC<ConnectionAnalyticsPanelProps> = ({
     return (
       <button
         onClick={onToggle}
-        className="fixed top-16 right-4 bg-gray-800 text-white p-2 rounded-lg shadow-lg 
+        className="fixed top-22 right-4 bg-gray-800 text-white p-2 rounded-lg shadow-lg 
                    hover:bg-gray-700 transition-colors z-1"
         title="Show Connection Analytics"
       >

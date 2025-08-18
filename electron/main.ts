@@ -19,6 +19,10 @@ const createWindow = (): void => {
       allowRunningInsecureContent: true,
     },
     frame: false,
+    titleBarStyle: "hidden", // This ensures no default title bar on macOS
+    show: false, // Don't show until ready
+    minWidth: 800,
+    minHeight: 600,
   });
 
   if (isDev) {
@@ -33,6 +37,25 @@ const createWindow = (): void => {
     // Option 2: Load local file with proper headers
     // mainWindow.loadFile(join(__dirname, "../dist/index.html"));
   }
+
+  // Show window when ready to prevent visual flash
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show();
+    mainWindow?.maximize();
+  });
+
+  // Set up window state change listeners
+  mainWindow.on("maximize", () => {
+    mainWindow?.webContents.send("window-state-changed", true);
+  });
+
+  mainWindow.on("unmaximize", () => {
+    mainWindow?.webContents.send("window-state-changed", false);
+  });
+
+  mainWindow.on("restore", () => {
+    mainWindow?.webContents.send("window-state-changed", false);
+  });
 };
 
 app.whenReady().then(async () => {
@@ -41,10 +64,6 @@ app.whenReady().then(async () => {
   await backendManager.start();
 
   createWindow();
-
-  if (mainWindow) {
-    mainWindow.maximize();
-  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -73,4 +92,40 @@ ipcMain.handle("get-backend-url", () => {
 // IPC handler to check backend status
 ipcMain.handle("backend-status", () => {
   return backendManager?.isRunning() || false;
+});
+
+// Window control IPC handlers
+ipcMain.handle("window-minimize", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize();
+  }
+});
+
+ipcMain.handle("window-maximize", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.restore();
+    } else {
+      mainWindow.maximize();
+    }
+  }
+});
+
+ipcMain.handle("window-restore", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.restore();
+  }
+});
+
+ipcMain.handle("window-close", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+});
+
+ipcMain.handle("window-is-maximized", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow.isMaximized();
+  }
+  return false;
 });

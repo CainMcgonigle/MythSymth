@@ -152,3 +152,140 @@ select:focus-visible {
     height: 100% !important;
   }
 }
+
+.app {
+  @apply w-full h-full bg-gray-900 text-white overflow-hidden;
+}
+
+.app-body {
+  @apply flex-1 flex overflow-hidden;
+  /* Make the main content area not draggable */
+  -webkit-app-region: no-drag;
+}
+
+.main-content {
+  @apply flex-1 relative overflow-hidden;
+}
+
+/* Title bar drag region styles */
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+
+/* Make window control buttons and other interactive elements not draggable */
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Ensure all buttons and interactive elements are not draggable */
+button, 
+input, 
+textarea, 
+select, 
+a, 
+.clickable,
+.react-flow__node,
+.react-flow__edge,
+.react-flow__handle,
+.react-flow__controls,
+.react-flow__minimap,
+.react-flow__panel {
+  -webkit-app-region: no-drag;
+}
+
+/* Custom scrollbar for the frameless window */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Ensure the React Flow container doesn't interfere with dragging */
+.react-flow {
+  -webkit-app-region: no-drag;
+}
+
+/* Make sure sidebar content is not draggable */
+.sidebar,
+.sidebar * {
+  -webkit-app-region: no-drag;
+}
+
+/* Make sure toolbar content is not draggable */
+.toolbar,
+.toolbar * {
+  -webkit-app-region: no-drag;
+}
+
+/* Make sure status bar content is not draggable */
+.status-bar,
+.status-bar * {
+  -webkit-app-region: no-drag;
+}
+
+/* Make sure edit panel content is not draggable */
+.node-edit-panel,
+.node-edit-panel * {
+  -webkit-app-region: no-drag;
+}
+
+/* Make sure modal content is not draggable */
+.modal,
+.modal *,
+[role="dialog"],
+[role="dialog"] * {
+  -webkit-app-region: no-drag;
+}
+
+/* Fix for any Tailwind components that might interfere */
+.fixed,
+.absolute,
+.relative {
+  -webkit-app-region: no-drag;
+}
+
+/* Ensure dropdowns and overlays are not draggable */
+[data-radix-popper-content-wrapper],
+[data-radix-portal],
+.dropdown-content,
+.popover-content,
+.tooltip {
+  -webkit-app-region: no-drag;
+}
+
+/* Additional styles for better visual consistency */
+.title-bar-icon {
+  @apply w-4 h-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-sm shadow-sm flex-shrink-0;
+}
+
+/* Smooth transitions for window controls */
+.window-control {
+  @apply transition-all duration-150 ease-in-out;
+}
+
+.window-control:hover {
+  @apply transform scale-110;
+}
+
+/* Ensure proper z-indexing for title bar */
+.title-bar {
+  z-index: 9999;
+}
+
+/* Make sure React Query dev tools don't interfere */
+[data-rq-devtools],
+[data-rq-devtools] * {
+  -webkit-app-region: no-drag;
+}

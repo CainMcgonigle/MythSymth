@@ -12,9 +12,11 @@ import NodeEditPanel from "@/components/NodeEditPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { Toolbar } from "@/components/Toolbar";
 import { StatusBar } from "@/components/Statusbar";
+import { TitleBar } from "@/components/electron/TitleBar";
 import ConnectionAnalyticsPanel from "@/components/ConnectionAnalyticsPanel";
 import { Node, CreateNodeRequest, NodeType, UpdateNodeRequest } from "@/types";
 import { useNodes, useApiHealth } from "@/hooks/useNodes";
+import { useIsElectron } from "@/utils/electronDetection";
 import "./App.css";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
@@ -65,10 +67,14 @@ const AppContent: React.FC = () => {
   const [unsavedNodeChanges, setUnsavedNodeChanges] = useState<
     Record<string, Partial<Node>>
   >({});
+
   const graphRef = useRef<WorldGraphRef>(null);
   const { data: allNodes = [], isLoading, error, refetch } = useNodes();
   const { data: isOnline = false } = useApiHealth();
   const { addToast } = useToast();
+
+  // Get Electron environment info
+  const { isElectron, shouldShowTitleBar, platform } = useIsElectron();
 
   // Memoize effective nodes
   const effectiveNodes = useMemo(() => {
@@ -253,7 +259,6 @@ const AppContent: React.FC = () => {
   );
 
   // New callback to track unsaved changes
-  // New callback to track unsaved changes
   const handleNodeChange = useCallback(
     (nodeId: string, changes: Partial<Node>) => {
       setUnsavedNodeChanges((prev) => {
@@ -284,6 +289,17 @@ const AppContent: React.FC = () => {
     []
   );
 
+  // Title bar handlers
+  const handleMenuClick = useCallback(() => {
+    // You can implement a dropdown menu here
+    console.log("Menu clicked");
+  }, []);
+
+  const handleSettingsClick = useCallback(() => {
+    // You can open a settings modal here
+    console.log("Settings clicked");
+  }, []);
+
   useEffect(() => {
     apiService.setQueryClient(queryClient);
   }, []);
@@ -295,32 +311,65 @@ const AppContent: React.FC = () => {
     }
   }, [allNodes, localNodes.length]);
 
+  // Dynamic title based on environment
+  const getAppTitle = () => {
+    const baseTitle = "MythSmith - World Builder";
+    const selectedNodeSuffix = selectedNode
+      ? ` - ${selectedNode.data.name}`
+      : "";
+    const environmentSuffix = isElectron ? "" : " (Web)"; // Show (Web) when running in browser
+
+    return `${baseTitle}${selectedNodeSuffix}${environmentSuffix}`;
+  };
+
   if (isLoading) {
     return (
-      <div className="app flex items-center justify-center h-screen">
-        <div className="text-lg">Loading nodes...</div>
+      <div className="app flex flex-col items-center justify-center h-screen">
+        {shouldShowTitleBar && <TitleBar title="MythSmith - Loading..." />}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-lg">Loading nodes...</div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="app flex flex-col items-center justify-center h-screen">
-        <div className="text-lg text-red-600 mb-4">
-          Failed to load nodes: {error.message}
+      <div className="app flex flex-col h-screen">
+        {shouldShowTitleBar && <TitleBar title="MythSmith - Error" />}
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="text-lg text-red-600 mb-4">
+            Failed to load nodes: {error.message}
+          </div>
+          <button
+            onClick={() => refetch()}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Retry
+          </button>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Retry
-        </button>
       </div>
     );
   }
 
   return (
     <div className="app flex flex-col h-screen">
+      {/* Only show TitleBar in Electron */}
+      {shouldShowTitleBar && (
+        <TitleBar
+          title={getAppTitle()}
+          onMenuClick={handleMenuClick}
+          onSettingsClick={handleSettingsClick}
+        />
+      )}
+
+      {/* Show environment indicator in development */}
+      {process.env.NODE_ENV === "development" && !isElectron && (
+        <div className="bg-yellow-600 text-yellow-100 text-xs px-2 py-1 text-center">
+          Running in Web Browser - Some features may be limited
+        </div>
+      )}
+
       <Toolbar
         onCreateNode={() => setIsCreateModalOpen(true)}
         onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
@@ -348,13 +397,13 @@ const AppContent: React.FC = () => {
                 onEdgesUpdated={handleEdgesUpdate}
               />
             </ReactFlowProvider>
+            <ConnectionAnalyticsPanel
+              edges={currentEdges}
+              nodes={effectiveNodes}
+              isOpen={analyticsOpen}
+              onToggle={() => setAnalyticsOpen(!analyticsOpen)}
+            />
           </ErrorBoundary>
-          <ConnectionAnalyticsPanel
-            edges={currentEdges}
-            nodes={effectiveNodes}
-            isOpen={analyticsOpen}
-            onToggle={() => setAnalyticsOpen(!analyticsOpen)}
-          />
         </div>
         <div
           className={`

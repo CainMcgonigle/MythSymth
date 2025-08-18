@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Node, NodeType } from "../types";
 import {
   User,
@@ -28,6 +28,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   selectedNode,
   isSidebarOpen,
 }) => {
+  const [isThinView, setIsThinView] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsThinView(window.innerWidth < 1450);
+    };
+
+    // Initialize view state
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const quickCreateOptions = [
     {
       type: "character" as NodeType,
@@ -77,18 +91,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
   return (
     <div className="relative flex justify-between items-center bg-neutral-900 border-b border-gray-700 shadow-lg h-[56px] pr-4 pl-4">
-      {}
+      {/* Left section */}
       <div className="flex items-center gap-2 h-full">
         <button
           onClick={onToggleSidebar}
           title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
           className="flex items-center gap-1.5 font-semibold text-gray-300 hover:text-white px-2 h-full rounded-md transition-colors duration-150"
         >
-          {}
           {isSidebarOpen ? <PanelLeftClose size={18} /> : <Menu size={18} />}
         </button>
 
-        {}
         <button
           onClick={onCreateNode}
           title="Create New Node"
@@ -97,7 +109,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Plus size={18} />
         </button>
 
-        {}
         <div className="flex gap-2">
           {quickCreateOptions.map((option) => (
             <button
@@ -105,38 +116,38 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={() => onQuickCreate(option.type)}
               title={option.title}
               className={`
-                flex items-center gap-1.5 font-semibold px-3 py-1.5 rounded-full transition-colors duration-150
+                flex items-center justify-center font-semibold transition-colors duration-150
                 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-neutral-900
+                ${isThinView ? "p-2 rounded-lg" : "gap-1.5 px-3 py-1.5 rounded-full"}
                 ${option.baseClasses} ${option.hoverClasses}
               `}
             >
               {option.icon}
-              <span>{option.label}</span>
+              {!isThinView && <span>{option.label}</span>}
             </button>
           ))}
         </div>
       </div>
 
-      {}
+      {/* Center logo */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center font-semibold text-orange-400 text-lg select-none pointer-events-none">
         <img
           src="/assets/android-chrome-192x192.png"
           alt="MythSmith logo"
           className="w-8 h-8 mr-1"
         />
-        <span>MythSmith</span>
+        {!isThinView && <span>MythSmith</span>}
       </div>
-      {}
+
+      {/* Right section */}
       <div className="flex items-center space-x-3 text-gray-300">
         {selectedNode && (
-          <>
-            <div className="flex items-center gap-1 text-sm opacity-90 select-text max-w-xs truncate">
-              <span>Selected:</span>
-              <span className="font-semibold truncate max-w-xs">
-                {selectedNode.data.name}
-              </span>
-            </div>
-          </>
+          <div className="flex items-center gap-1 text-sm opacity-90 select-text max-w-xs truncate">
+            <span>Selected:</span>
+            <span className="font-semibold truncate max-w-xs">
+              {selectedNode.data.name}
+            </span>
+          </div>
         )}
 
         <button
@@ -149,7 +160,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           className="flex items-center gap-1.5 font-semibold bg-indigo-700 text-indigo-200 px-3 py-1.5 rounded-md shadow-sm hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors duration-150"
         >
           <HelpCircle size={18} />
-          <span>Help</span>
+          {!isThinView && <span>Help</span>}
         </button>
       </div>
     </div>
