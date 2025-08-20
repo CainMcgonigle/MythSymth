@@ -39,8 +39,8 @@ import { nodeKeys } from "@/hooks/useNodes";
 import { GRID_SIZE, LOCALSTORAGE_KEYS } from "@/constants/graphConstants";
 import { WorldGraphProps, WorldGraphRef } from "@/types/graphTypes";
 import { CreateNodeRequest, Node, NodeType } from "@/types";
-import MythSmithNode from "./MythSmithNode";
-import MythSmithEdge, { MythSmithEdgeData } from "./edges/MythSmithEdge";
+import MythSmithNode from "./graphComponents/MythSmithNode";
+import MythSmithEdge, { MythSmithEdgeData } from "./graphComponents/MythSmithEdge";
 import CustomControls from "./CustomControls";
 import ConnectionModal from "./ConnectionModal";
 import { ConnectionValidator } from "../utils/connectionValidator";
@@ -50,7 +50,6 @@ import { useToast } from "../components/ui/Toast";
 const nodeTypes = {
   mythsmith: MythSmithNode,
 };
-
 const edgeTypes = {
   mythsmith: MythSmithEdge,
 };
@@ -85,6 +84,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       conflicts?: string[];
       warnings?: string[];
     }>({});
+
     useGraphPersistence(graphState, graphState.isInitialized);
 
     const {
@@ -672,10 +672,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
           });
 
           // Step 4: Clear local storage to ensure fresh data from DB
-          localStorage.removeItem(LOCALSTORAGE_KEYS.NODES);
-          localStorage.removeItem(LOCALSTORAGE_KEYS.EDGES);
-          localStorage.removeItem(LOCALSTORAGE_KEYS.LAST_SAVED);
-          localStorage.removeItem(LOCALSTORAGE_KEYS.PENDING_CHANGES);
+          clearLocalStorage();
 
           // Step 5: Show success message
           let message = `Imported ${response.nodesCreated} nodes and ${response.edgesCreated} edges`;

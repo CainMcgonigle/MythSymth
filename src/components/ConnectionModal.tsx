@@ -22,7 +22,7 @@ import {
 import { customSelectStyles } from "@/styles/customSelect";
 import Select from "react-select";
 import type { SingleValue, ActionMeta } from "react-select";
-import { MythSmithEdgeData } from "./edges/MythSmithEdge";
+import { MythSmithEdgeData } from "./graphComponents/MythSmithEdge";
 
 interface ConnectionModalProps {
   isOpen: boolean;

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"mythsmith-backend/database"
-	"mythsmith-backend/models"
 	"net/http"
 	"strings"
 	"time"
@@ -21,9 +20,33 @@ func NewImportHandler(db *database.DB) *ImportHandler {
 	return &ImportHandler{db: db}
 }
 
+// Define the import data structures based on your actual JSON
+type ImportNodeData struct {
+	Name                string                 `json:"name"`
+	Type                string                 `json:"type"`
+	Description         string                 `json:"description"`
+	ConnectionDirection string                 `json:"connectionDirection"`
+	ID                  string                 `json:"id"`
+	Properties          map[string]interface{} `json:"properties,omitempty"`
+}
+
+type ImportNode struct {
+	ID       string         `json:"id"`
+	Data     ImportNodeData `json:"data"`
+	Position struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+	} `json:"position"`
+}
+
+type ImportData struct {
+	Nodes []ImportNode             `json:"nodes"`
+	Edges []map[string]interface{} `json:"edges"`
+}
+
 type ImportRequest struct {
-	Strategy string            `json:"strategy"`
-	Data     models.ImportData `json:"data"`
+	Strategy string     `json:"strategy"`
+	Data     ImportData `json:"data"`
 }
 
 type ImportResponse struct {
@@ -37,8 +60,19 @@ type ImportResponse struct {
 func (h *ImportHandler) ImportMap(c *gin.Context) {
 	var req ImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request format: %v", err)})
 		return
+	}
+
+	// Validate request data
+	if len(req.Data.Nodes) == 0 && len(req.Data.Edges) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No data to import"})
+		return
+	}
+
+	// Validate strategy
+	if req.Strategy != "replace" && req.Strategy != "merge" {
+		req.Strategy = "replace" // Default to replace
 	}
 
 	response := ImportResponse{
@@ -46,137 +80,140 @@ func (h *ImportHandler) ImportMap(c *gin.Context) {
 		Warnings:  []string{},
 	}
 
-	// Start with a fresh transaction
+	// Start transaction with proper error handling
 	tx, err := h.db.Begin()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
 		return
 	}
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
 
-	// Set a timeout for the transaction to prevent hanging
-	_, err = tx.Exec("PRAGMA busy_timeout = 5000") // 5 seconds timeout
-	if err != nil {
-		tx.Rollback()
+	// Set transaction timeout
+	if _, err := tx.Exec("PRAGMA busy_timeout = 10000"); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set timeout"})
 		return
 	}
 
-	// Handle nodes
+	// Handle replace strategy
 	if req.Strategy == "replace" {
-		// First, let's check if we have any active transactions by trying to commit
-		// This should release any locks
-		if err := tx.Commit(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit initial transaction"})
+		if err := h.clearExistingData(tx); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to clear existing data: %v", err)})
 			return
-		}
-
-		// Start a new transaction for the actual work
-		tx, err = h.db.Begin()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start new transaction"})
-			return
-		}
-
-		// Set timeout again
-		_, err = tx.Exec("PRAGMA busy_timeout = 5000")
-		if err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set timeout"})
-			return
-		}
-
-		// Try to clear existing data with retry logic
-		maxRetries := 3
-		for i := 0; i < maxRetries; i++ {
-			// Check if tables exist first
-			var tableExists bool
-			err = tx.QueryRow("SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='edges')").Scan(&tableExists)
-			if err != nil {
-				tx.Rollback()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to check edges table: %v", err)})
-				return
-			}
-
-			if tableExists {
-				// Try to delete edges
-				_, err = tx.Exec("DELETE FROM edges")
-				if err != nil {
-					if i == maxRetries-1 {
-						// Last attempt failed
-						tx.Rollback()
-						c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to clear existing edges after %d attempts: %v", maxRetries, err)})
-						return
-					}
-					// Wait before retrying
-					time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
-					continue
-				}
-			}
-
-			// Check if nodes table exists
-			err = tx.QueryRow("SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='nodes')").Scan(&tableExists)
-			if err != nil {
-				tx.Rollback()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to check nodes table: %v", err)})
-				return
-			}
-
-			if tableExists {
-				// Try to delete nodes
-				_, err = tx.Exec("DELETE FROM nodes")
-				if err != nil {
-					if i == maxRetries-1 {
-						// Last attempt failed
-						tx.Rollback()
-						c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to clear existing nodes after %d attempts: %v", maxRetries, err)})
-						return
-					}
-					// Wait before retrying
-					time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
-					continue
-				}
-			}
-
-			// Success, break out of retry loop
-			break
 		}
 	}
 
-	// Get existing node IDs for conflict detection
+	// Get existing nodes for merge conflict detection
 	existingNodes := make(map[string]bool)
 	if req.Strategy == "merge" {
-		rows, err := tx.Query("SELECT id FROM nodes")
+		existingNodes, err = h.getExistingNodeIDs(tx)
 		if err != nil {
-			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get existing nodes"})
 			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			rows.Scan(&id)
-			existingNodes[id] = true
 		}
 	}
 
 	now := time.Now()
-	nodeIdMapping := make(map[string]string)  // old ID -> new ID for conflicts
-	tempIdToNodeId := make(map[string]string) // tempId -> real ID mapping
+	nodeIdMapping := make(map[string]string)
+	tempIdToNodeId := make(map[string]string)
 
-	// Process imported nodes
-	for _, importNode := range req.Data.Nodes {
+	// Process nodes
+	if err := h.processNodes(tx, req.Data.Nodes, existingNodes, nodeIdMapping, tempIdToNodeId, req.Strategy, now, &response); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to process nodes: %v", err)})
+		return
+	}
+
+	// Process edges
+	if err := h.processEdges(tx, req.Data.Edges, nodeIdMapping, tempIdToNodeId, req.Strategy, now, &response); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to process edges: %v", err)})
+		return
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+	tx = nil // Prevent rollback in defer
+
+	response.Message = fmt.Sprintf("Import completed successfully: %d nodes, %d edges created",
+		response.NodesCreated, response.EdgesCreated)
+
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *ImportHandler) clearTable(tx *sql.Tx, tableName string) error {
+	// Check if table exists
+	var exists bool
+	query := "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)"
+	if err := tx.QueryRow(query, tableName).Scan(&exists); err != nil {
+		return err
+	}
+
+	if !exists {
+		return nil // Table doesn't exist, nothing to clear
+	}
+
+	// Clear the table with retry logic
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s", tableName)); err != nil {
+			if i == maxRetries-1 {
+				return err
+			}
+			time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	return nil
+}
+
+func (h *ImportHandler) getExistingNodeIDs(tx *sql.Tx) (map[string]bool, error) {
+	existing := make(map[string]bool)
+
+	rows, err := tx.Query("SELECT id FROM nodes")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		existing[id] = true
+	}
+
+	return existing, rows.Err()
+}
+
+func (h *ImportHandler) processNodes(tx *sql.Tx, nodes []ImportNode, existingNodes map[string]bool,
+	nodeIdMapping, tempIdToNodeId map[string]string, strategy string, now time.Time, response *ImportResponse) error {
+
+	for _, importNode := range nodes {
 		nodeId := importNode.ID
 		originalId := nodeId
 
+		// Validate node ID
+		if nodeId == "" {
+			return fmt.Errorf("node missing ID")
+		}
+
 		// Handle ID conflicts in merge mode
-		if req.Strategy == "merge" && existingNodes[nodeId] {
+		if strategy == "merge" && existingNodes[nodeId] {
 			nodeId = fmt.Sprintf("%s_imported_%d", originalId, now.Unix())
 			nodeIdMapping[originalId] = nodeId
 			response.Conflicts = append(response.Conflicts,
 				fmt.Sprintf("Node %s renamed to %s due to conflict", originalId, nodeId))
 		}
 
-		// Extract data from the struct fields
+		// Extract and validate node data from the actual JSON structure
 		name := importNode.Data.Name
 		if name == "" {
 			response.Warnings = append(response.Warnings,
@@ -184,7 +221,7 @@ func (h *ImportHandler) ImportMap(c *gin.Context) {
 			name = nodeId
 		}
 
-		nodeType := string(importNode.Data.Type)
+		nodeType := importNode.Data.Type
 		if nodeType == "" {
 			response.Warnings = append(response.Warnings,
 				fmt.Sprintf("Node %s missing type, using default 'character'", nodeId))
@@ -192,15 +229,23 @@ func (h *ImportHandler) ImportMap(c *gin.Context) {
 		}
 
 		description := importNode.Data.Description
-		connectionDirection := string(importNode.Data.ConnectionDirection)
+		connectionDirection := importNode.Data.ConnectionDirection
 		if connectionDirection == "" {
 			connectionDirection = "all"
 		}
 
-		// Get extended properties from the Properties field
-		properties := importNode.Data.Properties
-		if properties == nil {
-			properties = make(map[string]interface{})
+		// Handle properties - start with existing properties
+		properties := make(map[string]interface{})
+		if importNode.Data.Properties != nil {
+			for k, v := range importNode.Data.Properties {
+				properties[k] = v
+			}
+		}
+
+		// Add metadata for tracking
+		properties["originalId"] = originalId
+		if nodeId != originalId {
+			properties["importedAs"] = nodeId
 		}
 
 		// Store tempId mapping if present
@@ -210,7 +255,7 @@ func (h *ImportHandler) ImportMap(c *gin.Context) {
 
 		propertiesJSON, err := json.Marshal(properties)
 		if err != nil {
-			propertiesJSON = []byte("{}")
+			return fmt.Errorf("failed to marshal properties for node %s: %v", nodeId, err)
 		}
 
 		// Insert node
@@ -220,29 +265,62 @@ func (h *ImportHandler) ImportMap(c *gin.Context) {
         `, nodeId, name, nodeType, description,
 			importNode.Position.X, importNode.Position.Y, connectionDirection,
 			string(propertiesJSON), now, now)
+
 		if err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to import node %s: %v", nodeId, err),
-			})
-			return
+			return fmt.Errorf("failed to insert node %s: %v", nodeId, err)
 		}
+
 		response.NodesCreated++
 	}
 
-	// Process edges
-	for _, edgeMap := range req.Data.Edges {
-		// Extract edge ID or generate one
-		edgeId, hasId := edgeMap["id"].(string)
-		if !hasId {
-			edgeId = fmt.Sprintf("edge_%d", now.UnixNano())
+	return nil
+}
+
+func (h *ImportHandler) processEdges(tx *sql.Tx, edges []map[string]interface{},
+	nodeIdMapping, tempIdToNodeId map[string]string, strategy string, now time.Time, response *ImportResponse) error {
+
+	// Get existing edge IDs for conflict detection in merge mode
+	existingEdges := make(map[string]bool)
+	if strategy == "merge" {
+		rows, err := tx.Query("SELECT id FROM edges")
+		if err != nil {
+			return fmt.Errorf("failed to get existing edges: %v", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return fmt.Errorf("failed to scan edge ID: %v", err)
+			}
+			existingEdges[id] = true
 		}
 
-		// Get source and target
-		source, _ := edgeMap["source"].(string)
-		target, _ := edgeMap["target"].(string)
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("error iterating edge rows: %v", err)
+		}
+	}
 
-		// Handle source ID - check if it's a tempId or needs remapping
+	for i, edgeMap := range edges {
+		// Extract or generate edge ID
+		edgeId, hasId := edgeMap["id"].(string)
+		if !hasId || edgeId == "" {
+			edgeId = fmt.Sprintf("edge_%d_%d", now.UnixNano(), i)
+		}
+
+		originalEdgeId := edgeId
+
+		// Extract source and target
+		source, hasSource := edgeMap["source"].(string)
+		target, hasTarget := edgeMap["target"].(string)
+
+		if !hasSource || !hasTarget || source == "" || target == "" {
+			response.Warnings = append(response.Warnings,
+				fmt.Sprintf("Edge %s missing source or target, skipping", edgeId))
+			continue
+		}
+
+		// Handle source ID mapping
 		if strings.HasPrefix(source, "temp_") {
 			if realId, ok := tempIdToNodeId[source]; ok {
 				source = realId
@@ -255,7 +333,7 @@ func (h *ImportHandler) ImportMap(c *gin.Context) {
 			source = remappedId
 		}
 
-		// Handle target ID - check if it's a tempId or needs remapping
+		// Handle target ID mapping
 		if strings.HasPrefix(target, "temp_") {
 			if realId, ok := tempIdToNodeId[target]; ok {
 				target = realId
@@ -268,131 +346,90 @@ func (h *ImportHandler) ImportMap(c *gin.Context) {
 			target = remappedId
 		}
 
-		// Get handles
-		sourceHandle, _ := edgeMap["sourceHandle"].(string)
-		targetHandle, _ := edgeMap["targetHandle"].(string)
-
-		// Extract edge properties
-		basicFields := map[string]bool{
-			"id": true, "source": true, "target": true,
-			"sourceHandle": true, "targetHandle": true, "relationship": true, "data": true,
-		}
-		properties := make(map[string]interface{})
-		for key, value := range edgeMap {
-			if !basicFields[key] {
-				properties[key] = value
-			}
-		}
-
-		// Merge data properties
-		if dataMap, ok := edgeMap["data"].(map[string]interface{}); ok {
-			for k, v := range dataMap {
-				properties[k] = v
-			}
-		}
-
-		propertiesJSON, err := json.Marshal(properties)
-		if err != nil {
-			propertiesJSON = []byte("{}")
-		}
-
-		// Get relationship type
-		relationship, _ := properties["type"].(string)
-		if relationship == "" {
-			relationship = "custom"
-		}
-
-		// Insert edge
-		_, err = tx.Exec(`
-            INSERT INTO edges (id, source_node_id, target_node_id, source_handle, target_handle, relationship, properties, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, edgeId, source, target, sourceHandle, targetHandle, relationship, string(propertiesJSON), now)
-
-		if err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to import edge %s: %v", edgeId, err),
-			})
-			return
-		}
-		response.EdgesCreated++
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit import transaction"})
-		return
-	}
-
-	response.Message = fmt.Sprintf("Import completed: %d nodes, %d edges",
-		response.NodesCreated, response.EdgesCreated)
-	c.JSON(http.StatusOK, response)
-}
-
-// Helper method for processing edges
-func (h *ImportHandler) processEdges(tx *sql.Tx, req ImportRequest, nodeIdMapping map[string]string, now time.Time, response *ImportResponse) error {
-	// Get existing edge IDs for conflict detection
-	existingEdges := make(map[string]bool)
-	if req.Strategy == "merge" {
-		rows, err := tx.Query("SELECT id FROM edges")
-		if err != nil {
-			return fmt.Errorf("failed to get existing edges")
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			rows.Scan(&id)
-			existingEdges[id] = true
-		}
-	}
-
-	// Process imported edges
-	for _, edgeMap := range req.Data.Edges {
-		edgeId, _ := edgeMap["id"].(string)
-		source, _ := edgeMap["source"].(string)
-		target, _ := edgeMap["target"].(string)
-		sourceHandle, _ := edgeMap["sourceHandle"].(string)
-		targetHandle, _ := edgeMap["targetHandle"].(string)
-		relationship, _ := edgeMap["relationship"].(string)
-
-		// Update source/target if they were remapped due to conflicts
-		if newSource, exists := nodeIdMapping[source]; exists {
-			source = newSource
-		}
-		if newTarget, exists := nodeIdMapping[target]; exists {
-			target = newTarget
-		}
-
-		// Handle edge ID conflicts
-		originalEdgeId := edgeId
-		if req.Strategy == "merge" && existingEdges[edgeId] {
+		// Handle edge ID conflicts in merge mode
+		if strategy == "merge" && existingEdges[edgeId] {
 			edgeId = fmt.Sprintf("%s_imported_%d", originalEdgeId, now.Unix())
 			response.Conflicts = append(response.Conflicts,
 				fmt.Sprintf("Edge %s renamed to %s due to conflict", originalEdgeId, edgeId))
 		}
 
-		// Extract edge properties
+		// Extract handles
+		sourceHandle, _ := edgeMap["sourceHandle"].(string)
+		targetHandle, _ := edgeMap["targetHandle"].(string)
+
+		// Get relationship from data.type or data.relationship or fallback
+		var relationship string
+		if dataMap, ok := edgeMap["data"].(map[string]interface{}); ok {
+			if dataType, ok := dataMap["type"].(string); ok {
+				relationship = dataType
+			} else if dataRel, ok := dataMap["relationship"].(string); ok {
+				relationship = dataRel
+			}
+		}
+		if relationship == "" {
+			if edgeType, ok := edgeMap["type"].(string); ok && edgeType != "mythsmith" {
+				relationship = edgeType
+			}
+		}
+		if relationship == "" {
+			relationship = "custom"
+		}
+
+		// Build properties map - exclude basic edge fields
 		basicFields := map[string]bool{
 			"id": true, "source": true, "target": true,
-			"sourceHandle": true, "targetHandle": true, "relationship": true, "data": true,
+			"sourceHandle": true, "targetHandle": true, "type": true,
+			"animated": true, "selected": true, // React Flow specific fields
 		}
+
 		properties := make(map[string]interface{})
+
+		// Add top-level properties (excluding basic fields)
 		for key, value := range edgeMap {
 			if !basicFields[key] {
 				properties[key] = value
 			}
 		}
 
-		// Merge data properties
+		// Merge data properties if they exist
 		if dataMap, ok := edgeMap["data"].(map[string]interface{}); ok {
 			for k, v := range dataMap {
 				properties[k] = v
 			}
 		}
 
+		// Add metadata for tracking
+		properties["originalId"] = originalEdgeId
+		if edgeId != originalEdgeId {
+			properties["importedAs"] = edgeId
+		}
+
+		// Convert properties to JSON
 		propertiesJSON, err := json.Marshal(properties)
 		if err != nil {
-			propertiesJSON = []byte("{}")
+			return fmt.Errorf("failed to marshal properties for edge %s: %v", edgeId, err)
+		}
+
+		// Verify that source and target nodes exist
+		var sourceExists, targetExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM nodes WHERE id = ?)", source).Scan(&sourceExists)
+		if err != nil {
+			return fmt.Errorf("failed to check source node existence: %v", err)
+		}
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM nodes WHERE id = ?)", target).Scan(&targetExists)
+		if err != nil {
+			return fmt.Errorf("failed to check target node existence: %v", err)
+		}
+
+		if !sourceExists {
+			response.Warnings = append(response.Warnings,
+				fmt.Sprintf("Edge %s references non-existent source node %s, skipping", edgeId, source))
+			continue
+		}
+		if !targetExists {
+			response.Warnings = append(response.Warnings,
+				fmt.Sprintf("Edge %s references non-existent target node %s, skipping", edgeId, target))
+			continue
 		}
 
 		// Insert edge
@@ -400,10 +437,26 @@ func (h *ImportHandler) processEdges(tx *sql.Tx, req ImportRequest, nodeIdMappin
             INSERT INTO edges (id, source_node_id, target_node_id, source_handle, target_handle, relationship, properties, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `, edgeId, source, target, sourceHandle, targetHandle, relationship, string(propertiesJSON), now)
+
 		if err != nil {
-			return fmt.Errorf("failed to import edge %s: %v", edgeId, err)
+			return fmt.Errorf("failed to insert edge %s: %v", edgeId, err)
 		}
+
 		response.EdgesCreated++
+	}
+
+	return nil
+}
+
+func (h *ImportHandler) clearExistingData(tx *sql.Tx) error {
+	// Check and clear edges first (foreign key dependency)
+	if err := h.clearTable(tx, "edges"); err != nil {
+		return fmt.Errorf("failed to clear edges: %v", err)
+	}
+
+	// Then clear nodes
+	if err := h.clearTable(tx, "nodes"); err != nil {
+		return fmt.Errorf("failed to clear nodes: %v", err)
 	}
 
 	return nil

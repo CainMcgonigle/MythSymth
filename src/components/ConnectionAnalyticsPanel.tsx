@@ -58,7 +58,7 @@ const ConnectionAnalyticsPanel: React.FC<ConnectionAnalyticsPanelProps> = ({
 
   return (
     <div
-      className="fixed top-16 right-4 w-80 bg-gray-800 text-white rounded-lg shadow-xl z-50
+      className="fixed top-22 right-4 w-80 bg-gray-800 text-white rounded-lg shadow-xl z-50
                     max-h-96 overflow-hidden flex flex-col"
     >
       {/* Header */}
