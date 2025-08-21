@@ -32,22 +32,17 @@ interface ToastProviderProps {
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  }, []);
+
   const addToast = useCallback(
     (message: string, type: ToastType, duration = 5000) => {
       const id = Math.random().toString(36).substr(2, 9);
       setToasts((prev) => [...prev, { id, message, type, duration }]);
-
-      
-      setTimeout(() => {
-        removeToast(id);
-      }, duration);
     },
     []
   );
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  }, []);
 
   return (
     <ToastContext.Provider value={{ addToast, removeToast }}>
@@ -71,6 +66,17 @@ interface ToastItemProps {
 }
 
 const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
+  const [fadeOut, setFadeOut] = useState(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setFadeOut(true), toast.duration! - 300); // start fade out a bit earlier
+    const removeTimer = setTimeout(() => onRemove(), toast.duration);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(removeTimer);
+    };
+  }, [toast.duration, onRemove]);
+
   const getIcon = () => {
     switch (toast.type) {
       case "success":
@@ -103,7 +109,8 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
 
   return (
     <div
-      className={`${getBgColor()} text-white p-4 rounded-lg shadow-lg flex items-start min-w-[300px] animate-fadeIn`}
+      className={`${getBgColor()} text-white p-4 rounded-lg shadow-lg flex items-start min-w-[300px] 
+        transition-opacity duration-300 ${fadeOut ? "opacity-0" : "opacity-100"}`}
     >
       <div className="flex-shrink-0 mr-3">{getIcon()}</div>
       <div className="flex-1">

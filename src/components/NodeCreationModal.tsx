@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { CreateNodeRequest, NodeType, ConnectionDirection } from "@/types";
 import { defaultCharacterData } from "@/schemas/characterSchema";
 import { defaultFactionData } from "@/schemas/factionSchema";
@@ -49,22 +49,10 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
   onCreate,
   initialPosition = { x: 0, y: 0 },
 }) => {
-  const [formData, setFormData] = useState<CreateNodeRequest>({
-    ...defaultCharacterData(),
-    name: "",
-    type: "character",
-    position: initialPosition,
-    connectionDirection: "all",
-  });
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      const type = formData.type || "character";
+  const createBaseState = useCallback(
+    (type: NodeType = "character"): CreateNodeRequest => {
       const schema = defaultSchemas[type]();
-
-      setFormData({
+      return {
         ...schema,
         name: "",
         type,
@@ -73,14 +61,34 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
           y: initialPosition.y + Math.random() * 100 - 50,
         },
         connectionDirection: "all",
-      } as CreateNodeRequest);
+      } as CreateNodeRequest;
+    },
+    [initialPosition]
+  );
+
+  const [formData, setFormData] = useState<CreateNodeRequest>(
+    createBaseState("character")
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(createBaseState("character"));
     }
-  }, [isOpen]);
+  }, [isOpen, createBaseState]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
-
     try {
       setIsSubmitting(true);
       await onCreate(formData);
@@ -99,23 +107,24 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
 
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selected = e.target.value as NodeType;
-    const schema = defaultSchemas[selected]();
-
-    setFormData(
-      (prev) =>
-        ({
-          ...schema,
-          name: prev.name,
-          position: prev.position,
-          connectionDirection: prev.connectionDirection,
-          type: selected,
-        }) as CreateNodeRequest
-    );
+    setFormData((prev) => {
+      const schema = defaultSchemas[selected]();
+      return {
+        ...schema,
+        name: prev.name,
+        position: prev.position,
+        connectionDirection: prev.connectionDirection,
+        type: selected,
+      } as CreateNodeRequest;
+    });
   };
 
-  if (!isOpen) return null;
+  const FormComponent = useMemo(
+    () => formComponents[formData.type],
+    [formData.type]
+  );
 
-  const FormComponent = formComponents[formData.type];
+  if (!isOpen) return null;
 
   return (
     <div
@@ -140,7 +149,6 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
               Name <span className="text-red-500">*</span>
@@ -157,7 +165,6 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
             />
           </div>
 
-          {}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
               Type
@@ -175,7 +182,6 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
             </select>
           </div>
 
-          {}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
               Connections
@@ -196,14 +202,12 @@ export const NodeCreationModal: React.FC<NodeCreationModalProps> = ({
             </select>
           </div>
 
-          {}
           {FormComponent && (
             <div className="border-t border-gray-700 pt-4">
               <FormComponent data={formData} setData={setFormData} />
             </div>
           )}
 
-          {}
           <div className="flex gap-4">
             <button
               type="button"

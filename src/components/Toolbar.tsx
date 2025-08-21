@@ -19,6 +19,7 @@ interface ToolbarProps {
   onQuickCreate: (type: NodeType) => void;
   selectedNode: Node | null;
   isSidebarOpen: boolean;
+  onDragStart: (type: NodeType) => void; // New prop for drag start
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -27,6 +28,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onQuickCreate,
   selectedNode,
   isSidebarOpen,
+  onDragStart, // Add the new prop
 }) => {
   const [isThinView, setIsThinView] = useState(false);
 
@@ -34,10 +36,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     const handleResize = () => {
       setIsThinView(window.innerWidth < 1450);
     };
-
-    // Initialize view state
     handleResize();
-
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -100,7 +99,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         >
           {isSidebarOpen ? <PanelLeftClose size={18} /> : <Menu size={18} />}
         </button>
-
         <button
           onClick={onCreateNode}
           title="Create New Node"
@@ -108,18 +106,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         >
           <Plus size={18} />
         </button>
-
         <div className="flex gap-2">
           {quickCreateOptions.map((option) => (
             <button
               key={option.type}
               onClick={() => onQuickCreate(option.type)}
               title={option.title}
+              draggable
+              onDragStart={() => onDragStart(option.type)} // Add drag start handler
               className={`
                 flex items-center justify-center font-semibold transition-colors duration-150
                 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-neutral-900
                 ${isThinView ? "p-2 rounded-lg" : "gap-1.5 px-3 py-1.5 rounded-full"}
                 ${option.baseClasses} ${option.hoverClasses}
+                cursor-move
               `}
             >
               {option.icon}
@@ -128,7 +128,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           ))}
         </div>
       </div>
-
       {/* Center logo */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center font-semibold text-orange-400 text-lg select-none pointer-events-none">
         <img
@@ -138,7 +137,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         />
         {!isThinView && <span>MythSmith</span>}
       </div>
-
       {/* Right section */}
       <div className="flex items-center space-x-3 text-gray-300">
         {selectedNode && (
@@ -149,7 +147,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             </span>
           </div>
         )}
-
         <button
           onClick={() => {
             alert(

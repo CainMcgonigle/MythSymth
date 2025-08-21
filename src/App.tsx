@@ -63,6 +63,7 @@ const AppContent: React.FC = () => {
   const [filter, setFilter] = useState<NodeType | "all">("all");
   const [currentEdges, setCurrentEdges] = useState<Edge[]>([]);
   const [localNodes, setLocalNodes] = useState<Node[]>([]);
+  const [dragNodeType, setDragNodeType] = useState<NodeType | null>(null);
   // New state to track unsaved changes
   const [unsavedNodeChanges, setUnsavedNodeChanges] = useState<
     Record<string, Partial<Node>>
@@ -76,6 +77,9 @@ const AppContent: React.FC = () => {
   // Get Electron environment info
   const { isElectron, shouldShowTitleBar, platform } = useIsElectron();
 
+  const handleDragStart = useCallback((type: NodeType) => {
+    setDragNodeType(type);
+  }, []);
   // Memoize effective nodes
   const effectiveNodes = useMemo(() => {
     return localNodes.length > 0 ? localNodes : allNodes;
@@ -376,6 +380,7 @@ const AppContent: React.FC = () => {
         onQuickCreate={handleQuickCreate}
         selectedNode={selectedNode}
         isSidebarOpen={sidebarVisible}
+        onDragStart={handleDragStart}
       />
       <div className="app-body flex flex-grow relative overflow-hidden">
         <Sidebar
@@ -395,6 +400,8 @@ const AppContent: React.FC = () => {
                 onNodeSelect={handleNodeSelect}
                 onNodesUpdated={handleNodesUpdate}
                 onEdgesUpdated={handleEdgesUpdate}
+                dragNodeType={dragNodeType}
+                onDragEnd={() => setDragNodeType(null)}
               />
             </ReactFlowProvider>
             <ConnectionAnalyticsPanel

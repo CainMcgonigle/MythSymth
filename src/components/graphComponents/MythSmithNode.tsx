@@ -26,7 +26,6 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
   const [expanded, setExpanded] = useState(false);
 
   const stylesByType = (type: NodeType) => {
-    
     return {
       character: {
         gradient: "from-blue-400 to-blue-600",
@@ -78,7 +77,6 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
 
   const s = stylesByType(nodeData.type);
 
-  
   const handlePos: Record<string, React.CSSProperties> = {
     top: { top: "-10px", left: "50%", transform: "translateX(-50%)" },
     bottom: { bottom: "-10px", left: "50%", transform: "translateX(-50%)" },
@@ -90,12 +88,10 @@ const MythSmithNode: React.FC<NodeProps> = ({ id, data }) => {
     `w-4 h-4 rounded-full border-2 border-white transition-transform duration-150 ease-out ` +
     `group-hover:scale-125 hover:scale-150 focus:scale-150 ${s.handleBg} z-50`;
 
-  
   const handleBoxShadow = (rgba: string) =>
     `0 10px 22px ${rgba}, inset 0 0 0 1px rgba(255,255,255,0.04)`;
 
   return (
-    
     <div className="relative group" style={{ overflow: "visible" }}>
       {}
       {(nodeData.connectionDirection === "vertical" ||

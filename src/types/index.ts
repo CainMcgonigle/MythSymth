@@ -252,3 +252,23 @@ export interface PaginatedResponse<T> {
     hasPrev: boolean;
   };
 }
+
+export interface MythSmithEdgeData {
+  customColor: string;
+  customIconName: string;
+  label?: string;
+  type:
+    | "friendship"
+    | "rivalry"
+    | "alliance"
+    | "conflict"
+    | "location"
+    | "event"
+    | "family"
+    | "trade"
+    | "custom";
+  strength: "weak" | "moderate" | "strong";
+  description?: string;
+  bidirectional?: boolean;
+  animated?: boolean;
+}

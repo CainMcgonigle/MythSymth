@@ -10,9 +10,7 @@ export interface ConnectionRule {
   description: string;
 }
 
-
 export const connectionRules: ConnectionRule[] = [
-  
   {
     sourceType: "character",
     targetType: "character",
@@ -53,7 +51,7 @@ export const connectionRules: ConnectionRule[] = [
     defaultConnectionType: "location",
     description: "Characters can visit or be associated with locations",
   },
-  
+
   {
     sourceType: "faction",
     targetType: "faction",
@@ -78,7 +76,7 @@ export const connectionRules: ConnectionRule[] = [
     defaultConnectionType: "event",
     description: "Factions can be involved in events",
   },
-  
+
   {
     sourceType: "city",
     targetType: "city",
@@ -95,7 +93,7 @@ export const connectionRules: ConnectionRule[] = [
     defaultConnectionType: "location",
     description: "Cities can be connected to nearby locations",
   },
-  
+
   {
     sourceType: "event",
     targetType: "event",
@@ -112,7 +110,7 @@ export const connectionRules: ConnectionRule[] = [
     defaultConnectionType: "location",
     description: "Events can occur at specific locations",
   },
-  
+
   {
     sourceType: "location",
     targetType: "location",
@@ -138,7 +136,7 @@ export class ConnectionValidator {
   constructor(nodes: Node<{ type: NodeType }>[], connections: Connection[]) {
     this.nodes = nodes;
     this.connections = connections;
-    
+
     this.defaultRule = {
       sourceType: "any",
       targetType: "any",
@@ -152,62 +150,45 @@ export class ConnectionValidator {
     const targetNode = this.nodes.find((n) => n.id === connection.target);
 
     if (!sourceNode || !targetNode) {
-      return {
-        isValid: false,
-        reason: "Source or target node not found",
-      };
+      return { isValid: false, reason: "Source or target node not found" };
     }
 
-    
     if (connection.source === connection.target) {
-      return {
-        isValid: false,
-        reason: "Cannot connect a node to itself",
-      };
+      return { isValid: false, reason: "Cannot connect a node to itself" };
     }
 
-    
     const rule =
       this.findConnectionRule(sourceNode.data.type, targetNode.data.type) ||
       this.defaultRule;
+    const isBidirectional = rule.bidirectional ?? false;
 
-    
-    const isBidirectional = rule?.bidirectional ?? false;
-    const existingConnection = this.connections.find((conn) => {
-      if (isBidirectional) {
-        return (
-          (conn.source === connection.source &&
+    // check existing connections first
+    const connectionExists = this.connections.some((conn) =>
+      isBidirectional
+        ? (conn.source === connection.source &&
             conn.target === connection.target) ||
           (conn.source === connection.target &&
             conn.target === connection.source)
-        );
-      }
-      return (
-        conn.source === connection.source && conn.target === connection.target
-      );
-    });
+        : conn.source === connection.source && conn.target === connection.target
+    );
 
-    if (existingConnection) {
+    if (connectionExists) {
       return {
         isValid: false,
         reason: "Connection already exists between these nodes",
       };
     }
 
-    
+    // check max connections for source node
     if (rule.maxConnections) {
-      const sourceConnectionsCount = this.connections.filter((conn) => {
-        if (isBidirectional) {
-          return (
-            conn.source === connection.source ||
+      const sourceConnectionCount = this.connections.filter((conn) =>
+        isBidirectional
+          ? conn.source === connection.source ||
             conn.target === connection.source
-          );
-        } else {
-          return conn.source === connection.source;
-        }
-      }).length;
+          : conn.source === connection.source
+      ).length;
 
-      if (sourceConnectionsCount >= rule.maxConnections) {
+      if (sourceConnectionCount >= rule.maxConnections) {
         return {
           isValid: false,
           reason: `Maximum connections (${rule.maxConnections}) reached for source node`,
@@ -216,23 +197,18 @@ export class ConnectionValidator {
       }
     }
 
-    return {
-      isValid: true,
-      suggestedType: rule.defaultConnectionType,
-    };
+    return { isValid: true, suggestedType: rule.defaultConnectionType };
   }
 
   private findConnectionRule(
     sourceType: NodeType,
     targetType: NodeType
   ): ConnectionRule | null {
-    
     let rule = connectionRules.find(
       (rule) => rule.sourceType === sourceType && rule.targetType === targetType
     );
     if (rule) return rule;
 
-    
     rule = connectionRules.find(
       (rule) =>
         rule.bidirectional &&
@@ -241,7 +217,6 @@ export class ConnectionValidator {
     );
     if (rule) return rule;
 
-    
     rule = connectionRules.find(
       (rule) => rule.sourceType === "any" && rule.targetType === targetType
     );
@@ -298,14 +273,12 @@ export class ConnectionValidator {
       nodeConnectionCounts: {} as Record<string, number>,
     };
 
-    
     this.connections.forEach((conn) => {
       const connType = (conn as any).data?.type ?? "custom";
       stats.connectionsByType[connType] =
         (stats.connectionsByType[connType] || 0) + 1;
     });
 
-    
     this.connections.forEach((conn) => {
       if (conn.source) {
         stats.nodeConnectionCounts[conn.source] =

@@ -1,10 +1,10 @@
-// WorldGraph.tsx
 import React, {
   useEffect,
   useCallback,
   forwardRef,
   useImperativeHandle,
   useState,
+  useRef,
 } from "react";
 import ReactFlow, {
   MiniMap,
@@ -16,6 +16,7 @@ import ReactFlow, {
   Node as FlowNode,
   Edge,
   ConnectionMode,
+  useReactFlow,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -40,7 +41,8 @@ import { GRID_SIZE, LOCALSTORAGE_KEYS } from "@/constants/graphConstants";
 import { WorldGraphProps, WorldGraphRef } from "@/types/graphTypes";
 import { CreateNodeRequest, Node, NodeType } from "@/types";
 import MythSmithNode from "./graphComponents/MythSmithNode";
-import MythSmithEdge, { MythSmithEdgeData } from "./graphComponents/MythSmithEdge";
+import MythSmithEdge from "./graphComponents/MythSmithEdge";
+import { MythSmithEdgeData } from "@/types";
 import CustomControls from "./CustomControls";
 import ConnectionModal from "./ConnectionModal";
 import { ConnectionValidator } from "../utils/connectionValidator";
@@ -50,20 +52,28 @@ import { useToast } from "../components/ui/Toast";
 const nodeTypes = {
   mythsmith: MythSmithNode,
 };
+
 const edgeTypes = {
   mythsmith: MythSmithEdge,
 };
 
 interface UpdatedWorldGraphProps extends WorldGraphProps {
   onEdgesUpdated?: (edges: Edge[]) => void;
+  dragNodeType?: NodeType | null;
+  onDragEnd?: () => void;
 }
 
 export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
-  ({ onNodeSelect, onNodesUpdated, onEdgesUpdated }, ref) => {
+  (
+    { onNodeSelect, onNodesUpdated, onEdgesUpdated, dragNodeType, onDragEnd },
+    ref
+  ) => {
     const graphState = useGraphState();
     const queryClient = useQueryClient();
     const { saveMapMutation, createNodeMutation } = useGraphMutations();
     const { addToast } = useToast();
+    const reactFlowWrapper = useRef<HTMLDivElement>(null);
+    const reactFlowInstance = useReactFlow();
     const [pendingConnection, setPendingConnection] =
       useState<Connection | null>(null);
     const [connectionModal, setConnectionModal] = useState({
@@ -84,9 +94,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       conflicts?: string[];
       warnings?: string[];
     }>({});
-
     useGraphPersistence(graphState, graphState.isInitialized);
-
     const {
       nodes,
       edges,
@@ -117,7 +125,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       undo,
       redo,
     } = graphState;
-
     const [dragStartPosition, setDragStartPosition] = useState<{
       id: string;
       position: { x: number; y: number };
@@ -179,26 +186,51 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       [dragStartPosition, saveStateToHistory]
     );
 
+    const lastInvalidRef = useRef<string | null>(null);
     const isValidConnection = useCallback(
       (connection: Connection): boolean => {
         if (!validator) return true;
         const result = validator.validateConnection(connection);
         if (!result.isValid) {
-          addToast(result.reason || "Invalid connection", "error");
+          const key = `${connection.source}-${connection.target}`;
+          // only show toast if this connection attempt is new
+          if (lastInvalidRef.current !== key) {
+            addToast(result.reason || "Invalid connection", "error");
+            lastInvalidRef.current = key;
+          }
           return false;
         }
+        // reset last invalid if valid connection is possible
+        lastInvalidRef.current = null;
         return true;
       },
       [validator, addToast]
     );
 
+    const [lastInvalidConnection, setLastInvalidConnection] =
+      useState<Connection | null>(null);
     const onConnect = useCallback(
       (params: Connection) => {
-        if (!isValidConnection(params)) return;
+        if (!validator) return;
+        const validation = validator.validateConnection(params);
+        // Handle invalid connections (show warning only once per unique attempt)
+        if (!validation.isValid) {
+          if (
+            !lastInvalidConnection ||
+            lastInvalidConnection.source !== params.source ||
+            lastInvalidConnection.target !== params.target
+          ) {
+            console.warn(validation.reason); // replace with toast or modal if needed
+            setLastInvalidConnection(params);
+          }
+          return;
+        }
+        // Valid connection: reset last invalid attempt
+        setLastInvalidConnection(null);
+        // Open the connection modal for valid connections
         const sourceNode = nodes.find((n) => n.id === params.source);
         const targetNode = nodes.find((n) => n.id === params.target);
-        if (!sourceNode || !targetNode || !validator) return;
-        const validation = validator.validateConnection(params);
+        if (!sourceNode || !targetNode) return;
         setPendingConnection(params);
         setConnectionModal({
           isOpen: true,
@@ -207,7 +239,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
           suggestedType: validation.suggestedType || "custom",
         });
       },
-      [nodes, validator, isValidConnection]
+      [nodes, validator, lastInvalidConnection]
     );
 
     const handleCreateConnection = useCallback(
@@ -654,13 +686,11 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
           if (!importResult.data) {
             throw new Error("No data in import result");
           }
-
           // Step 2: Prepare data for backend
           const importRequest = prepareImportData(
             importResult.data,
             mergeStrategy
           );
-
           // Step 3: Send to backend
           const response = await apiService.import.importMap(importRequest);
           console.log("Import response:", response);
@@ -670,17 +700,14 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
             conflicts: response.conflicts,
             warnings: response.warnings,
           });
-
           // Step 4: Clear local storage to ensure fresh data from DB
           clearLocalStorage();
-
           // Step 5: Show success message
           let message = `Imported ${response.nodesCreated} nodes and ${response.edgesCreated} edges`;
           if (response.conflicts && response.conflicts.length > 0) {
             message += ` (${response.conflicts.length} conflicts resolved)`;
           }
           addToast(message, "success");
-
           // Step 6: Show warnings if any
           if (response.warnings && response.warnings.length > 0) {
             const warningCount = response.warnings.length;
@@ -691,7 +718,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
               );
             }, 1000);
           }
-
           // Step 7: Reset graph state and force reload from DB
           setNodes([]);
           setEdges([]);
@@ -705,7 +731,6 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
             updatedEdges: [],
             deletedEdges: [],
           });
-
           // Step 8: Refresh data from backend
           queryClient.invalidateQueries({ queryKey: nodeKeys.all });
           queryClient.invalidateQueries({ queryKey: ["edges"] });
@@ -862,6 +887,47 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       [nodes, setNodes, saveStateToHistory]
     );
 
+    // Drag and drop handlers
+    const onDragOver = useCallback((event: React.DragEvent) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    }, []);
+
+    const onDrop = useCallback(
+      (event: React.DragEvent) => {
+        event.preventDefault();
+
+        if (!dragNodeType || !reactFlowWrapper.current) return;
+
+        // Get the ReactFlow container bounds
+        const reactFlowBounds =
+          reactFlowWrapper.current.getBoundingClientRect();
+
+        // Calculate position relative to the container
+        const position = reactFlowInstance.project({
+          x: event.clientX - reactFlowBounds.left,
+          y: event.clientY - reactFlowBounds.top,
+        });
+
+        // Create a new node with the dragged type
+        const newNodeData: CreateNodeRequest = {
+          id: `temp_${uuidv4()}`,
+          name: `New ${dragNodeType}`,
+          type: dragNodeType,
+          description: "",
+          position,
+          connectionDirection: "all",
+        };
+
+        // Use the existing addNode method
+        addNode(newNodeData);
+
+        // Reset drag state
+        if (onDragEnd) onDragEnd();
+      },
+      [dragNodeType, addNode, onDragEnd, reactFlowInstance]
+    );
+
     useImperativeHandle(ref, () => ({
       addNode,
       deleteNode,
@@ -886,7 +952,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
     }
 
     return (
-      <div style={{ height: "100%", width: "100%" }}>
+      <div ref={reactFlowWrapper} style={{ height: "100%", width: "100%" }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -914,6 +980,8 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
           panOnDrag={isInteractive}
           onNodeDragStart={onNodeDragStart}
           onNodeDragStop={onNodeDragStop}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
         >
           <Panel position="bottom-left">
             <CustomControls

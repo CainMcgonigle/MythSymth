@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Handshake,
   Sword,
@@ -19,10 +19,10 @@ import {
   Smile,
   Flame,
 } from "lucide-react";
-import { customSelectStyles } from "@/styles/customSelect";
 import Select from "react-select";
 import type { SingleValue, ActionMeta } from "react-select";
-import { MythSmithEdgeData } from "./graphComponents/MythSmithEdge";
+import { customSelectStyles } from "@/styles/customSelect";
+import { MythSmithEdgeData } from "@/types";
 
 interface ConnectionModalProps {
   isOpen: boolean;
@@ -88,6 +88,17 @@ const options = connectionTypes.map((type) => ({
   ),
 }));
 
+const buildBaseData = (suggestedType?: string): MythSmithEdgeData => ({
+  type: (suggestedType as MythSmithEdgeData["type"]) || "custom",
+  strength: "moderate",
+  bidirectional: false,
+  animated: false,
+  customIconName: "Settings",
+  customColor: "#6b7280",
+  label: "",
+  description: "",
+});
+
 const ConnectionModal: React.FC<ConnectionModalProps> = ({
   isOpen,
   isEdit = false,
@@ -99,55 +110,39 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
   targetNodeName,
   suggestedType,
 }) => {
-  const [connectionData, setConnectionData] = useState<MythSmithEdgeData>({
-    type: "custom",
-    strength: "moderate",
-    bidirectional: false,
-    animated: false,
-    customIconName: "Settings",
-    customColor: "#6b7280",
-  });
+  const [connectionData, setConnectionData] =
+    useState<MythSmithEdgeData | null>(null);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    },
-    [onClose]
-  );
+  const resetToBase = useCallback(() => {
+    setConnectionData(buildBaseData(suggestedType));
+  }, [suggestedType]);
+
+  const handleClose = useCallback(() => {
+    resetToBase();
+    onClose();
+  }, [onClose, resetToBase]);
 
   useEffect(() => {
     if (isOpen) {
-      document.addEventListener("keydown", handleKeyDown);
-
-      if (isEdit && initialData) {
-        setConnectionData({ ...initialData });
-      } else {
-        setConnectionData({
-          type: (suggestedType as MythSmithEdgeData["type"]) || "custom",
-          strength: "moderate",
-          bidirectional: false,
-          animated: false,
-          customIconName: "Settings",
-          customColor: "#6b7280",
-          label: "",
-          description: "",
-        });
-      }
+      if (isEdit && initialData) setConnectionData({ ...initialData });
+      else resetToBase();
     } else {
-      document.removeEventListener("keydown", handleKeyDown);
+      setConnectionData(null);
     }
+  }, [isOpen, isEdit, initialData, resetToBase]);
 
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, isEdit, initialData, suggestedType, handleKeyDown]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, handleClose]);
 
   const handleInputChange = useCallback(
     (field: keyof MythSmithEdgeData, value: string | number | boolean) => {
-      setConnectionData((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
+      setConnectionData((prev) => (prev ? { ...prev, [field]: value } : prev));
     },
     []
   );
@@ -160,46 +155,50 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
       const type = option
         ? (option.value as MythSmithEdgeData["type"])
         : "custom";
-
       handleInputChange("type", type);
-
       if (type === "custom") {
-        if (!connectionData.customIconName) {
-          handleInputChange("customIconName", "Settings");
-        }
-        if (!connectionData.customColor) {
-          handleInputChange("customColor", "#6b7280");
-        }
+        setConnectionData((prev) =>
+          prev
+            ? {
+                ...prev,
+                customIconName: prev.customIconName || "Settings",
+                customColor: prev.customColor || "#6b7280",
+              }
+            : prev
+        );
       }
     },
-    [
-      connectionData.customIconName,
-      connectionData.customColor,
-      handleInputChange,
-    ]
+    [handleInputChange]
   );
 
-  const getCurrentColor = useCallback(() => {
-    if (connectionData.type === "custom") {
-      return connectionData.customColor;
-    }
+  const currentColor = useMemo(() => {
+    if (!connectionData) return "#6b7280";
+    if (connectionData.type === "custom")
+      return connectionData.customColor || "#6b7280";
     return (
       connectionTypes.find((t) => t.value === connectionData.type)?.color ||
       "#6b7280"
     );
-  }, [connectionData.type, connectionData.customColor]);
+  }, [connectionData]);
 
-  const getSelectedIcon = useCallback(() => {
+  const SelectedIcon = useMemo(() => {
+    if (!connectionData) return Settings;
     if (connectionData.type === "custom") {
-      return customIcons.find((c) => c.name === connectionData.customIconName)
-        ?.Icon;
+      return (
+        customIcons.find((c) => c.name === connectionData.customIconName)
+          ?.Icon || Settings
+      );
     }
-    return connectionTypes.find((t) => t.value === connectionData.type)?.Icon;
-  }, [connectionData.type, connectionData.customIconName]);
+    return (
+      connectionTypes.find((t) => t.value === connectionData.type)?.Icon ||
+      Settings
+    );
+  }, [connectionData]);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
+      if (!connectionData) return;
 
       const completeData: MythSmithEdgeData = {
         customColor: connectionData.customColor || "#6b7280",
@@ -212,52 +211,50 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
         description: connectionData.description,
       };
 
-      if (isEdit && onUpdate) {
-        onUpdate(completeData);
-      } else if (onCreate) {
-        onCreate(completeData);
-      }
-      onClose();
+      if (isEdit && onUpdate) onUpdate(completeData);
+      else if (onCreate) onCreate(completeData);
+
+      handleClose();
     },
-    [connectionData, isEdit, onUpdate, onCreate, onClose]
+    [connectionData, isEdit, onUpdate, onCreate, handleClose]
   );
-
-  if (!isOpen) return null;
-
-  const currentColor = getCurrentColor();
-  const SelectedIcon = getSelectedIcon();
 
   const modalKey = isEdit
     ? `edit-${initialData?.id ?? initialData?.label ?? ""}`
     : `create-${sourceNodeName ?? ""}-${targetNodeName ?? ""}`;
 
+  if (!isOpen || !connectionData) return null;
+
   return (
     <div
       key={modalKey}
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999] p-4"
+      aria-modal="true"
+      role="dialog"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleClose();
+      }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-auto border border-gray-700">
-        {}
+      <div
+        className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-auto border border-gray-700"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <div className="flex items-center space-x-2">
-            {SelectedIcon ? (
-              <SelectedIcon className="w-5 h-5" color={currentColor} />
-            ) : (
-              <Settings className="w-5 h-5" color={currentColor} />
-            )}
+            <SelectedIcon className="w-5 h-5" color={currentColor} />
             <h2 className="text-lg font-semibold text-white">
               {isEdit ? "Edit Connection" : "Create Connection"}
             </h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-400 hover:text-white transition-colors"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-        {}
+
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {sourceNodeName && targetNodeName && (
             <div className="bg-gray-900 rounded-lg p-4 mb-4">
@@ -278,7 +275,7 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
               </div>
             </div>
           )}
-          {}
+
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Connection Type
@@ -288,8 +285,10 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
               onChange={handleTypeChange}
               value={options.find((opt) => opt.value === connectionData.type)}
               styles={customSelectStyles}
+              instanceId="connection-type-select"
             />
           </div>
+
           {connectionData.type === "custom" && (
             <>
               <div>
@@ -322,6 +321,7 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   ))}
                 </div>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Choose Color
@@ -338,7 +338,7 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
               </div>
             </>
           )}
-          {}
+
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Connection Strength
@@ -369,7 +369,7 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
               ))}
             </div>
           </div>
-          {}
+
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Label (optional)
@@ -382,7 +382,7 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
               className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white"
             />
           </div>
-          {}
+
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Description (optional)
@@ -395,7 +395,7 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
               className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white"
             />
           </div>
-          {}
+
           <div className="space-y-3">
             <label className="flex items-center space-x-2 cursor-pointer">
               <input
@@ -418,11 +418,11 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({
               <span className="text-white">Animated</span>
             </label>
           </div>
-          {}
+
           <div className="flex space-x-3 pt-4 border-t border-gray-700">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 transition-colors"
             >
               Cancel

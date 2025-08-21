@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -21,12 +21,12 @@ interface GraphPreviewModalProps {
 }
 
 // Inner component that uses useReactFlow hook
-const GraphPreviewContent = ({ 
-  nodes, 
-  edges 
-}: { 
-  nodes: Node[]; 
-  edges: Edge[]; 
+const GraphPreviewContent = ({
+  nodes,
+  edges,
+}: {
+  nodes: Node[];
+  edges: Edge[];
 }) => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const reactFlowInstance = useReactFlow();
@@ -69,9 +69,13 @@ const GraphPreviewContent = ({
         attributionPosition="bottom-left"
         onMoveEnd={handleMoveEnd}
       >
-        <Background variant={BackgroundVariant.Lines} gap={20} color="#2d3748" />
+        <Background
+          variant={BackgroundVariant.Lines}
+          gap={20}
+          color="#2d3748"
+        />
       </ReactFlow>
-      
+
       {/* Floating Zoom Controls */}
       <div className="absolute bottom-4 right-4 flex flex-col items-center space-y-2 bg-gray-800/80 backdrop-blur-sm rounded-lg p-2 shadow-lg">
         <button
@@ -109,6 +113,20 @@ const GraphPreviewModal: React.FC<GraphPreviewModalProps> = ({
   nodes,
   edges,
 }) => {
+  // 🔹 Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -131,7 +149,7 @@ const GraphPreviewModal: React.FC<GraphPreviewModalProps> = ({
             ✕
           </button>
         </div>
-        
+
         {/* Stats Bar */}
         <div className="px-4 py-2 bg-gray-800 flex items-center justify-between text-sm text-gray-300">
           <div>
@@ -160,7 +178,7 @@ const GraphPreviewModal: React.FC<GraphPreviewModalProps> = ({
             </div>
           </div>
         </div>
-        
+
         {/* React Flow */}
         <ReactFlowProvider>
           <GraphPreviewContent nodes={nodes} edges={edges} />
