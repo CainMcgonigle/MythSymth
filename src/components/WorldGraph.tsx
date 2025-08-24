@@ -5,57 +5,52 @@ import React, {
   useImperativeHandle,
   useState,
   useRef,
-} from "react";
+} from 'react';
 import ReactFlow, {
   MiniMap,
   Background,
   BackgroundVariant,
   Panel,
-  Connection,
-  addEdge,
+  ConnectionMode,
   Node as FlowNode,
   Edge,
-  ConnectionMode,
-  useReactFlow,
-} from "reactflow";
-import "reactflow/dist/style.css";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { v4 as uuidv4 } from "uuid";
-import {
-  exportToFormat,
-  importGraphData,
-  prepareImportData,
-} from "@/utils/importExportUtils";
-import ImportExportModal from "./ui/ImportExportModal";
-import { useGraphState } from "@/hooks/useGraphState";
-import { useGraphPersistence } from "@/hooks/useGraphPersistence";
-import { useGraphMutations } from "@/hooks/useGraphMutations";
-import {
-  convertToFlowNode,
-  convertToFlowEdge,
-  initializeFromLocalStorage,
-  clearLocalStorage,
-} from "../utils/graphUtils";
-import { nodeKeys } from "@/hooks/useNodes";
-import { GRID_SIZE, LOCALSTORAGE_KEYS } from "@/constants/graphConstants";
-import { WorldGraphProps, WorldGraphRef } from "@/types/graphTypes";
-import { CreateNodeRequest, Node, NodeType } from "@/types";
-import MythSmithNode from "./graphComponents/MythSmithNode";
-import MythSmithEdge from "./graphComponents/MythSmithEdge";
-import { MythSmithEdgeData } from "@/types";
-import CustomControls from "./CustomControls";
-import ConnectionModal from "./ConnectionModal";
-import { ConnectionValidator } from "../utils/connectionValidator";
-import { apiService } from "@/services/apiService";
-import { useToast } from "../components/ui/Toast";
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import { v4 as uuidv4 } from 'uuid';
 
-const nodeTypes = {
-  mythsmith: MythSmithNode,
-};
+// Hooks and utilities
+import { useGraphState } from '@/hooks/useGraphState';
+import { useGraphPersistence } from '@/hooks/useGraphPersistence';
+import { useGraphMutations } from '@/hooks/useGraphMutations';
+import { initializeFromLocalStorage, clearLocalStorage, convertToFlowNode } from '@/utils/graphUtils';
+import { LOCALSTORAGE_KEYS } from '@/constants/graphConstants';
+import { GRID_SIZE } from '@/constants/graphConstants';
+import { WorldGraphProps, WorldGraphRef } from '@/types/graphTypes';
+import { CreateNodeRequest, Node, NodeType } from '@/types';
 
-const edgeTypes = {
-  mythsmith: MythSmithEdge,
-};
+// Component imports
+import MythSmithNode from '@/components/graphComponents/MythSmithNode';
+import MythSmithEdge from '@/components/graphComponents/MythSmithEdge';
+import CustomControls from '@/components/CustomControls';
+import { useToast } from '@/components/ui/Toast';
+import { apiService } from '@/services/apiService';
+import ContextMenu, { ContextMenuOption } from '@/components/ui/ContextMenu';
+import NodeDetailsCard from '@/components/ui/NodeDetailsCard';
+import ConnectionDetailsCard from '@/components/graphComponents/edges/connectionDetailsCard';
+import { Edit, Trash2, Eye } from 'lucide-react';
+import { MythSmithEdgeData } from '@/types';
+import { EdgeInteractionProvider } from '@/contexts/EdgeInteractionContext';
+
+// New focused components
+import { GraphDataManager } from './graph/GraphDataManager';
+import { useGraphConnectionHandler } from './graph/GraphConnectionHandler';
+import { useGraphKeyboardHandler } from './graph/GraphKeyboardHandler';
+import { useGraphAutoSave } from './graph/GraphAutoSave';
+import { useGraphDragDrop } from './graph/GraphDragDrop';
+import { useGraphImportExport } from './graph/GraphImportExport';
+
+const nodeTypes = { mythsmith: MythSmithNode };
+const edgeTypes = { mythsmith: MythSmithEdge };
 
 interface UpdatedWorldGraphProps extends WorldGraphProps {
   onEdgesUpdated?: (edges: Edge[]) => void;
@@ -64,37 +59,35 @@ interface UpdatedWorldGraphProps extends WorldGraphProps {
 }
 
 export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
-  (
-    { onNodeSelect, onNodesUpdated, onEdgesUpdated, dragNodeType, onDragEnd },
-    ref
-  ) => {
+  ({ onNodeSelect, onNodesUpdated, onEdgesUpdated, dragNodeType, onDragEnd }, ref) => {
     const graphState = useGraphState();
-    const queryClient = useQueryClient();
     const { saveMapMutation, createNodeMutation } = useGraphMutations();
     const { addToast } = useToast();
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
-    const reactFlowInstance = useReactFlow();
-    const [pendingConnection, setPendingConnection] =
-      useState<Connection | null>(null);
-    const [connectionModal, setConnectionModal] = useState({
-      isOpen: false,
-      sourceNodeName: "",
-      targetNodeName: "",
-      suggestedType: "",
-    });
-    const [validator, setValidator] = useState<ConnectionValidator | null>(
-      null
-    );
-    const [importExportModal, setImportExportModal] = useState({
-      isOpen: false,
-    });
-    const [importDetails, setImportDetails] = useState<{
-      nodesCreated?: number;
-      edgesCreated?: number;
-      conflicts?: string[];
-      warnings?: string[];
-    }>({});
-    useGraphPersistence(graphState, graphState.isInitialized);
+    const [dragStartPosition, setDragStartPosition] = useState<{
+      id: string;
+      position: { x: number; y: number };
+    } | null>(null);
+    
+    const [nodeDetailsCard, setNodeDetailsCard] = useState<{
+      isVisible: boolean;
+      node: Node | null;
+      position: { x: number; y: number };
+    }>({ isVisible: false, node: null, position: { x: 0, y: 0 } });
+    
+    const [nodeContextMenu, setNodeContextMenu] = useState<{
+      x: number;
+      y: number;
+      node: Node | null;
+    } | null>(null);
+    
+    const [connectionDetailsCard, setConnectionDetailsCard] = useState<{
+      isVisible: boolean;
+      data: MythSmithEdgeData | null;
+      position: { x: number; y: number };
+    }>({ isVisible: false, data: null, position: { x: 0, y: 0 } });
+
+    // Destructure graph state
     const {
       nodes,
       edges,
@@ -125,155 +118,14 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       undo,
       redo,
     } = graphState;
-    const [dragStartPosition, setDragStartPosition] = useState<{
-      id: string;
-      position: { x: number; y: number };
-    } | null>(null);
 
-    // useEffect hook to notify parent components when nodes change
+    useGraphPersistence(graphState, isInitialized);
+
+    // Initialize from localStorage
     useEffect(() => {
-      if (onNodesUpdated && isInitialized) {
-        const backendNodes = nodes.map((fNode) => ({
-          id: fNode.id,
-          data: fNode.data,
-          position: fNode.position,
-          createdAt: fNode.data.createdAt,
-          updatedAt: fNode.data.updatedAt,
-        }));
-        onNodesUpdated(backendNodes);
-      }
-    }, [nodes, onNodesUpdated, isInitialized]);
-
-    // useEffect hook to notify parent components when edges change
-    useEffect(() => {
-      if (onEdgesUpdated && isInitialized) {
-        onEdgesUpdated(edges);
-      }
-    }, [edges, onEdgesUpdated, isInitialized]);
-
-    useEffect(() => {
-      const flowEdges: Connection[] = edges.map((edge) => ({
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle ?? null,
-        targetHandle: edge.targetHandle ?? null,
-      }));
-      setValidator(new ConnectionValidator(nodes, flowEdges));
-    }, [nodes, edges]);
-
-    const onNodeDragStart = useCallback(
-      (_event: React.MouseEvent, node: any) => {
-        setDragStartPosition({ id: node.id, position: { ...node.position } });
-      },
-      []
-    );
-
-    const onNodeDragStop = useCallback(
-      (_event: React.MouseEvent, node: any) => {
-        if (dragStartPosition && dragStartPosition.id === node.id) {
-          const startPos = dragStartPosition.position;
-          const endPos = node.position;
-          if (startPos.x !== endPos.x || startPos.y !== endPos.y) {
-            setPendingChanges((prev) => ({
-              ...prev,
-              updatedNodes: [...new Set([...prev.updatedNodes, node.id])],
-            }));
-            saveStateToHistory();
-          }
-        }
-        setDragStartPosition(null);
-      },
-      [dragStartPosition, saveStateToHistory]
-    );
-
-    const lastInvalidRef = useRef<string | null>(null);
-    const isValidConnection = useCallback(
-      (connection: Connection): boolean => {
-        if (!validator) return true;
-        const result = validator.validateConnection(connection);
-        if (!result.isValid) {
-          const key = `${connection.source}-${connection.target}`;
-          // only show toast if this connection attempt is new
-          if (lastInvalidRef.current !== key) {
-            addToast(result.reason || "Invalid connection", "error");
-            lastInvalidRef.current = key;
-          }
-          return false;
-        }
-        // reset last invalid if valid connection is possible
-        lastInvalidRef.current = null;
-        return true;
-      },
-      [validator, addToast]
-    );
-
-    const [lastInvalidConnection, setLastInvalidConnection] =
-      useState<Connection | null>(null);
-    const onConnect = useCallback(
-      (params: Connection) => {
-        if (!validator) return;
-        const validation = validator.validateConnection(params);
-        // Handle invalid connections (show warning only once per unique attempt)
-        if (!validation.isValid) {
-          if (
-            !lastInvalidConnection ||
-            lastInvalidConnection.source !== params.source ||
-            lastInvalidConnection.target !== params.target
-          ) {
-            console.warn(validation.reason); // replace with toast or modal if needed
-            setLastInvalidConnection(params);
-          }
-          return;
-        }
-        // Valid connection: reset last invalid attempt
-        setLastInvalidConnection(null);
-        // Open the connection modal for valid connections
-        const sourceNode = nodes.find((n) => n.id === params.source);
-        const targetNode = nodes.find((n) => n.id === params.target);
-        if (!sourceNode || !targetNode) return;
-        setPendingConnection(params);
-        setConnectionModal({
-          isOpen: true,
-          sourceNodeName: sourceNode.data.name,
-          targetNodeName: targetNode.data.name,
-          suggestedType: validation.suggestedType || "custom",
-        });
-      },
-      [nodes, validator, lastInvalidConnection]
-    );
-
-    const handleCreateConnection = useCallback(
-      (connectionData: MythSmithEdgeData) => {
-        if (!pendingConnection) return;
-        const newEdge: Edge = {
-          ...pendingConnection,
-          id: `edge_${uuidv4()}`,
-          type: "mythsmith",
-          data: connectionData,
-          animated: connectionData.animated,
-          source: pendingConnection.source ?? "",
-          target: pendingConnection.target ?? "",
-          sourceHandle: pendingConnection.sourceHandle ?? undefined,
-          targetHandle: pendingConnection.targetHandle ?? undefined,
-        };
-        setEdges((eds) => addEdge(newEdge, eds));
-        setPendingChanges((prev) => ({
-          ...prev,
-          newEdges: [...new Set([...prev.newEdges, newEdge.id])],
-        }));
-        saveStateToHistory();
-        setPendingConnection(null);
-        setConnectionModal((prev) => ({ ...prev, isOpen: false }));
-        addToast(`${connectionData.type} connection created`, "success");
-      },
-      [pendingConnection, setEdges, saveStateToHistory, addToast]
-    );
-
-    useEffect(() => {
-      const { savedNodes, savedEdges, savedPendingChanges } =
-        initializeFromLocalStorage();
+      const { savedNodes, savedEdges, savedPendingChanges } = initializeFromLocalStorage();
       if (savedNodes !== null && savedEdges !== null) {
-        console.log("Found data in localStorage. Hydrating state.");
+        console.log('Found data in localStorage. Hydrating state.');
         setNodes(savedNodes);
         setEdges(savedEdges);
         setHistory([{ nodes: savedNodes, edges: savedEdges }]);
@@ -283,66 +135,21 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
         }
         setIsInitialized(true);
       } else {
-        console.log("No data in localStorage. Triggering DB fetch.");
+        console.log('No data in localStorage. Triggering DB fetch.');
         setShouldLoadFromDB(true);
       }
     }, []);
 
-    const {
-      data: nodesData,
-      isLoading: nodesLoading,
-      isError: nodesError,
-    } = useQuery({
-      queryKey: nodeKeys.lists(),
-      queryFn: () => apiService.nodes.getNodes(),
-      staleTime: 5 * 60 * 1000,
-      enabled: shouldLoadFromDB,
-    });
-
-    const {
-      data: edgesData,
-      isLoading: edgesLoading,
-      isError: edgesError,
-    } = useQuery({
-      queryKey: ["edges"],
-      queryFn: () => apiService.edges.getEdges(),
-      staleTime: 5 * 60 * 1000,
-      enabled: shouldLoadFromDB,
-    });
-
-    useEffect(() => {
-      if (shouldLoadFromDB && nodesData && edgesData) {
-        const flowNodes = nodesData.map(convertToFlowNode);
-        const flowEdges = edgesData.map(convertToFlowEdge);
-        setNodes(flowNodes);
-        setEdges(flowEdges);
-        setPendingChanges({
-          newNodes: [],
-          updatedNodes: [],
-          deletedNodes: [],
-          newEdges: [],
-          updatedEdges: [],
-          deletedEdges: [],
-        });
-        setHistory([{ nodes: flowNodes, edges: flowEdges }]);
-        setHistoryIndex(0);
-        setShouldLoadFromDB(false);
-        setIsInitialized(true);
-        addToast("Data loaded successfully!", "success");
-      }
-    }, [
-      nodesData,
-      edgesData,
-      shouldLoadFromDB,
-      setNodes,
+    // Connection handling
+    const connectionHandler = useGraphConnectionHandler({
+      nodes,
+      edges,
       setEdges,
-      setHistory,
-      setHistoryIndex,
-      setShouldLoadFromDB,
-      setIsInitialized,
-      addToast,
-    ]);
+      setPendingChanges,
+      saveStateToHistory,
+    });
 
+    // Save function
     const saveMap = useCallback(async () => {
       if (!hasUnsavedChanges() || isSaving) return;
       setIsSaving(true);
@@ -521,56 +328,276 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       setPendingChanges,
       setHistory,
       setHistoryIndex,
+      setIsSaving,
     ]);
 
-    useEffect(() => {
-      if (!autoSaveEnabled || !hasUnsavedChanges() || !isInitialized) return;
-      const intervalId = setInterval(() => {
-        if (hasUnsavedChanges() && !isSaving) {
-          console.log("Auto-saving changes...");
-          saveMap();
-        }
-      }, autoSaveInterval);
-      return () => clearInterval(intervalId);
-    }, [
+    // Keyboard shortcuts
+    useGraphKeyboardHandler({
+      undo,
+      redo,
+      hasUnsavedChanges,
+      isSaving,
+      saveMap,
+    });
+
+    // Auto-save
+    useGraphAutoSave({
       autoSaveEnabled,
       autoSaveInterval,
       hasUnsavedChanges,
       isSaving,
-      saveMap,
       isInitialized,
-    ]);
+      saveMap,
+    });
+
+    // Node operations (defined early for drag drop)
+    const addNode = useCallback(
+      async (nodeData: CreateNodeRequest) => {
+        const tempId = `temp_${uuidv4()}`;
+        const newFlowNode: FlowNode = {
+          id: tempId,
+          position: nodeData.position || { x: 0, y: 0 },
+          data: { ...nodeData },
+          type: 'mythsmith',
+        };
+        setNodes((nds) => [...nds, newFlowNode]);
+        setPendingChanges((prev) => ({
+          ...prev,
+          newNodes: [...prev.newNodes, tempId],
+        }));
+        saveStateToHistory();
+        return newFlowNode;
+      },
+      [setNodes, saveStateToHistory, setPendingChanges]
+    );
+
+    // Drag and drop
+    const { onDragOver, onDrop } = useGraphDragDrop({
+      dragNodeType: dragNodeType || null,
+      reactFlowWrapper,
+      addNode,
+      onDragEnd,
+    });
+
+    // Import/Export
+    const { handleImportExportClick, ImportExportModalComponent } = useGraphImportExport({
+      nodes,
+      edges,
+      setNodes,
+      setEdges,
+      setHistory,
+      setHistoryIndex,
+      setPendingChanges,
+      setShouldLoadFromDB,
+    });
+
+    // Notify parent components of changes
+    useEffect(() => {
+      if (onNodesUpdated && isInitialized) {
+        const backendNodes = nodes.map((fNode) => ({
+          id: fNode.id,
+          data: fNode.data,
+          position: fNode.position,
+          createdAt: fNode.data.createdAt,
+          updatedAt: fNode.data.updatedAt,
+        }));
+        onNodesUpdated(backendNodes);
+      }
+    }, [nodes, onNodesUpdated, isInitialized]);
 
     useEffect(() => {
-      const handleKeyDown = (event: KeyboardEvent) => {
-        if (
-          (event.ctrlKey || event.metaKey) &&
-          event.key === "z" &&
-          !event.shiftKey
-        ) {
-          event.preventDefault();
-          undo();
-        } else if (
-          (event.ctrlKey || event.metaKey) &&
-          event.key === "z" &&
-          event.shiftKey
-        ) {
-          event.preventDefault();
-          redo();
-        } else if ((event.ctrlKey || event.metaKey) && event.key === "y") {
-          event.preventDefault();
-          redo();
-        } else if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-          event.preventDefault();
-          if (hasUnsavedChanges() && !isSaving) {
-            saveMap();
+      if (onEdgesUpdated && isInitialized) {
+        onEdgesUpdated(edges);
+      }
+    }, [edges, onEdgesUpdated, isInitialized]);
+
+    // Additional node operations
+
+    const deleteNode = useCallback(
+      async (nodeId: string) => {
+        const isTempNode = nodeId.startsWith('temp_');
+        if (!isTempNode) {
+          try {
+            await apiService.nodes.deleteNode(nodeId);
+          } catch (error) {
+            console.error('Failed to delete node from backend:', error);
+            addToast('Failed to delete node. Please try again.', 'error');
+            return;
           }
         }
-      };
-      document.addEventListener("keydown", handleKeyDown);
-      return () => document.removeEventListener("keydown", handleKeyDown);
-    }, [undo, redo, hasUnsavedChanges, isSaving, saveMap]);
+        
+        setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+        setEdges((eds) =>
+          eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
+        );
+        
+        if (onNodeSelect) {
+          onNodeSelect(null);
+        }
+        saveStateToHistory();
+        addToast('Node deleted successfully', 'success');
+      },
+      [setNodes, setEdges, onNodeSelect, saveStateToHistory, addToast]
+    );
 
+    const updateNode = useCallback(
+      async (nodeId: string, updates: any): Promise<Node> => {
+        const nodeToUpdate = nodes.find((n) => n.id === nodeId);
+        if (!nodeToUpdate) {
+          return Promise.reject(new Error(`Node with ID ${nodeId} not found`));
+        }
+        
+        const { position: newPosition, ...updateData } = updates;
+        const updatedNode = {
+          ...nodeToUpdate,
+          data: { ...nodeToUpdate.data, ...updateData },
+          position: newPosition || nodeToUpdate.position,
+        };
+        
+        setNodes((nds) => nds.map((n) => (n.id === nodeId ? updatedNode : n)));
+        setPendingChanges((prev) => ({
+          ...prev,
+          updatedNodes: [...new Set([...prev.updatedNodes, nodeId])],
+        }));
+        saveStateToHistory();
+        
+        return Promise.resolve({
+          id: updatedNode.id,
+          data: updatedNode.data,
+          position: updatedNode.position,
+        } as Node);
+      },
+      [nodes, setNodes, saveStateToHistory, setPendingChanges]
+    );
+
+    const loadNodes = useCallback(() => {
+      clearLocalStorage();
+      setShouldLoadFromDB(true);
+      addToast('Loading data from server...', 'info');
+      return Promise.resolve();
+    }, [addToast, setShouldLoadFromDB]);
+
+    // Event handlers
+    const onNodeDragStart = useCallback(
+      (_event: React.MouseEvent, node: any) => {
+        setDragStartPosition({ id: node.id, position: { ...node.position } });
+      },
+      []
+    );
+
+    const onNodeDragStop = useCallback(
+      (_event: React.MouseEvent, node: any) => {
+        if (dragStartPosition && dragStartPosition.id === node.id) {
+          const startPos = dragStartPosition.position;
+          const endPos = node.position;
+          if (startPos.x !== endPos.x || startPos.y !== endPos.y) {
+            setPendingChanges((prev) => ({
+              ...prev,
+              updatedNodes: [...new Set([...prev.updatedNodes, node.id])],
+            }));
+            saveStateToHistory();
+          }
+        }
+        setDragStartPosition(null);
+      },
+      [dragStartPosition, saveStateToHistory, setPendingChanges]
+    );
+
+    const convertFlowNodeToNode = useCallback((flowNode: any): Node => {
+      return {
+        id: flowNode.id,
+        position: flowNode.position || { x: 0, y: 0 },
+        data: {
+          id: flowNode.id,
+          name: flowNode.data.name,
+          type: flowNode.data.type,
+          description: flowNode.data.description,
+          connectionDirection: flowNode.data.connectionDirection,
+        },
+        createdAt: flowNode.data.createdAt,
+        updatedAt: flowNode.data.updatedAt,
+      };
+    }, []);
+
+    const handleNodeClick = useCallback(
+      (event: React.MouseEvent, flowNode: any) => {
+        event.stopPropagation();
+        
+        const selectedNode = convertFlowNodeToNode(flowNode);
+        
+        setConnectionDetailsCard({ isVisible: false, data: null, position: { x: 0, y: 0 } });
+        setNodeDetailsCard({ 
+          isVisible: true, 
+          node: selectedNode,
+          position: { x: event.clientX, y: event.clientY }
+        });
+      },
+      [convertFlowNodeToNode]
+    );
+
+    const handleNodeContextMenu = useCallback(
+      (event: React.MouseEvent, flowNode: any) => {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        const selectedNode = convertFlowNodeToNode(flowNode);
+        
+        setNodeContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          node: selectedNode,
+        });
+      },
+      [convertFlowNodeToNode]
+    );
+
+    const handlePaneClick = useCallback(() => {
+      if (onNodeSelect) {
+        onNodeSelect(null);
+      }
+      // Close any open modals/menus
+      setNodeDetailsCard({ isVisible: false, node: null, position: { x: 0, y: 0 } });
+      setNodeContextMenu(null);
+      setConnectionDetailsCard({ isVisible: false, data: null, position: { x: 0, y: 0 } });
+    }, [onNodeSelect]);
+
+    const showConnectionDetails = useCallback((edgeId: string, data: MythSmithEdgeData, position: { x: number; y: number }) => {
+      setNodeDetailsCard({ isVisible: false, node: null, position: { x: 0, y: 0 } });
+      setConnectionDetailsCard({
+        isVisible: true,
+        data,
+        position,
+      });
+    }, []);
+
+    const getNodeContextMenuOptions = useCallback((node: Node): ContextMenuOption[] => [
+      {
+        icon: Eye,
+        label: 'View Details',
+        onClick: () => setNodeDetailsCard({ 
+          isVisible: true, 
+          node,
+          position: { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+        }),
+      },
+      {
+        icon: Edit,
+        label: 'Edit',
+        onClick: () => {
+          if (onNodeSelect) {
+            onNodeSelect(node);
+          }
+        },
+      },
+      {
+        icon: Trash2,
+        label: 'Delete',
+        onClick: () => deleteNode(node.id),
+        className: 'text-red-400 hover:bg-gray-700',
+      },
+    ], [onNodeSelect, deleteNode]);
+
+    // Snap to grid effect
     useEffect(() => {
       if (snapToGrid) {
         setNodes((currentNodes) => {
@@ -585,349 +612,7 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       }
     }, [snapToGrid, setNodes]);
 
-    const handleNodesChange = useCallback(
-      (changes: any[]) => {
-        onNodesChange(changes);
-        changes.forEach((change) => {
-          if (change.type !== "position" || !dragStartPosition) {
-            if (change.type === "position" && change.position) {
-              setPendingChanges((prev) => ({
-                ...prev,
-                updatedNodes: [...new Set([...prev.updatedNodes, change.id])],
-              }));
-            }
-          }
-        });
-        if (!dragStartPosition) {
-          saveStateToHistory();
-        }
-      },
-      [onNodesChange, dragStartPosition, saveStateToHistory]
-    );
-
-    const handleEdgesChange = useCallback(
-      (changes: any[]) => {
-        onEdgesChange(changes);
-        changes.forEach((change) => {
-          if (change.type === "add") {
-            setPendingChanges((prev) => ({
-              ...prev,
-              newEdges: [...new Set([...prev.newEdges, change.item.id])],
-            }));
-          } else if (change.type === "remove") {
-            setPendingChanges((prev) => ({
-              ...prev,
-              deletedEdges: [...new Set([...prev.deletedEdges, change.id])],
-            }));
-          }
-        });
-        saveStateToHistory();
-      },
-      [onEdgesChange, saveStateToHistory]
-    );
-
-    const handleNodeClick = useCallback(
-      (_event: React.MouseEvent, flowNode: any) => {
-        if (onNodeSelect) {
-          const selectedNode: Node = {
-            id: flowNode.id,
-            position: flowNode.position || { x: 0, y: 0 },
-            data: {
-              id: flowNode.id,
-              name: flowNode.data.name,
-              type: flowNode.data.type,
-              description: flowNode.data.description,
-              connectionDirection: flowNode.data.connectionDirection,
-            },
-            createdAt: flowNode.data.createdAt,
-            updatedAt: flowNode.data.updatedAt,
-          };
-          onNodeSelect(selectedNode);
-        }
-      },
-      [onNodeSelect]
-    );
-
-    const handlePaneClick = useCallback(() => {
-      if (onNodeSelect) {
-        onNodeSelect(null);
-      }
-    }, [onNodeSelect]);
-
-    const handleExport = useCallback(
-      (format: "json" | "csv" | "graphml", filename?: string) => {
-        try {
-          // Convert flow nodes back to backend node format
-          const backendNodes = nodes.map((fNode) => ({
-            id: fNode.id,
-            data: fNode.data,
-            position: fNode.position,
-            createdAt: fNode.data.createdAt,
-            updatedAt: fNode.data.updatedAt,
-          }));
-          exportToFormat(backendNodes, edges, format, filename);
-          addToast(`Graph exported as ${format.toUpperCase()}`, "success");
-        } catch (error) {
-          console.error("Export failed:", error);
-          addToast("Failed to export graph", "error");
-        }
-      },
-      [nodes, edges, addToast]
-    );
-
-    const handleImport = useCallback(
-      async (file: File, mergeStrategy: "replace" | "merge") => {
-        try {
-          // Step 1: Validate the file
-          const importResult = await importGraphData(file);
-          if (!importResult.success) {
-            throw new Error(importResult.error);
-          }
-          if (!importResult.data) {
-            throw new Error("No data in import result");
-          }
-          // Step 2: Prepare data for backend
-          const importRequest = prepareImportData(
-            importResult.data,
-            mergeStrategy
-          );
-          // Step 3: Send to backend
-          const response = await apiService.import.importMap(importRequest);
-          console.log("Import response:", response);
-          setImportDetails({
-            nodesCreated: response.nodesCreated,
-            edgesCreated: response.edgesCreated,
-            conflicts: response.conflicts,
-            warnings: response.warnings,
-          });
-          // Step 4: Clear local storage to ensure fresh data from DB
-          clearLocalStorage();
-          // Step 5: Show success message
-          let message = `Imported ${response.nodesCreated} nodes and ${response.edgesCreated} edges`;
-          if (response.conflicts && response.conflicts.length > 0) {
-            message += ` (${response.conflicts.length} conflicts resolved)`;
-          }
-          addToast(message, "success");
-          // Step 6: Show warnings if any
-          if (response.warnings && response.warnings.length > 0) {
-            const warningCount = response.warnings.length;
-            setTimeout(() => {
-              addToast(
-                `Import completed with ${warningCount} warnings`,
-                "warning"
-              );
-            }, 1000);
-          }
-          // Step 7: Reset graph state and force reload from DB
-          setNodes([]);
-          setEdges([]);
-          setHistory([]);
-          setHistoryIndex(0);
-          setPendingChanges({
-            newNodes: [],
-            updatedNodes: [],
-            deletedNodes: [],
-            newEdges: [],
-            updatedEdges: [],
-            deletedEdges: [],
-          });
-          // Step 8: Refresh data from backend
-          queryClient.invalidateQueries({ queryKey: nodeKeys.all });
-          queryClient.invalidateQueries({ queryKey: ["edges"] });
-          setShouldLoadFromDB(true);
-        } catch (error) {
-          console.error("Import failed:", error);
-          throw error;
-        }
-      },
-      [
-        queryClient,
-        setShouldLoadFromDB,
-        addToast,
-        setNodes,
-        setEdges,
-        setHistory,
-        setHistoryIndex,
-        setPendingChanges,
-      ]
-    );
-
-    const handleImportExportClick = useCallback(() => {
-      setImportExportModal({ isOpen: true });
-    }, []);
-
-    const handleImportExportClose = useCallback(() => {
-      setImportExportModal({ isOpen: false });
-    }, []);
-
-    const loadNodes = useCallback(async () => {
-      clearLocalStorage();
-      setShouldLoadFromDB(true);
-      addToast("Loading data from server...", "info");
-    }, [addToast, setShouldLoadFromDB]);
-
-    const addNode = useCallback(
-      async (nodeData: CreateNodeRequest) => {
-        const tempId = `temp_${uuidv4()}`;
-        const newFlowNode: FlowNode = {
-          id: tempId,
-          position: nodeData.position || { x: 0, y: 0 },
-          data: {
-            ...nodeData,
-          },
-          type: "mythsmith",
-        };
-        setNodes((nds) => [...nds, newFlowNode]);
-        setPendingChanges((prev) => ({
-          ...prev,
-          newNodes: [...prev.newNodes, tempId],
-        }));
-        saveStateToHistory();
-        return newFlowNode;
-      },
-      [setNodes, saveStateToHistory]
-    );
-
-    const deleteNode = useCallback(
-      async (nodeId: string) => {
-        const isTempNode = nodeId.startsWith("temp_");
-        if (!isTempNode) {
-          try {
-            await apiService.nodes.deleteNode(nodeId);
-          } catch (error) {
-            console.error("Failed to delete node from backend:", error);
-            addToast("Failed to delete node. Please try again.", "error");
-            return;
-          }
-        }
-        setNodes((nds) => nds.filter((node) => node.id !== nodeId));
-        setEdges((eds) =>
-          eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
-        );
-        setPendingChanges((prev) => {
-          const newDeletedNodes = isTempNode
-            ? prev.deletedNodes
-            : [...new Set([...prev.deletedNodes, nodeId])];
-          return {
-            ...prev,
-            deletedNodes: newDeletedNodes,
-            newNodes: prev.newNodes.filter((id) => id !== nodeId),
-            updatedNodes: prev.updatedNodes.filter((id) => id !== nodeId),
-          };
-        });
-        if (isInitialized) {
-          try {
-            const savedNodes = localStorage.getItem(LOCALSTORAGE_KEYS.NODES);
-            if (savedNodes) {
-              const parsedNodes = JSON.parse(savedNodes);
-              const updatedNodes = parsedNodes.filter(
-                (node: any) => node.id !== nodeId
-              );
-              localStorage.setItem(
-                LOCALSTORAGE_KEYS.NODES,
-                JSON.stringify(updatedNodes)
-              );
-            }
-            const savedEdges = localStorage.getItem(LOCALSTORAGE_KEYS.EDGES);
-            if (savedEdges) {
-              const parsedEdges = JSON.parse(savedEdges);
-              const updatedEdges = parsedEdges.filter(
-                (edge: any) => edge.source !== nodeId && edge.target !== nodeId
-              );
-              localStorage.setItem(
-                LOCALSTORAGE_KEYS.EDGES,
-                JSON.stringify(updatedEdges)
-              );
-            }
-          } catch (error) {
-            console.error("Failed to update localStorage:", error);
-          }
-        }
-        if (onNodeSelect) {
-          onNodeSelect(null);
-        }
-        saveStateToHistory();
-        addToast("Node deleted successfully", "success");
-      },
-      [
-        setNodes,
-        setEdges,
-        onNodeSelect,
-        saveStateToHistory,
-        addToast,
-        isInitialized,
-      ]
-    );
-
-    const updateNode = useCallback(
-      async (nodeId: string, updates: any): Promise<Node> => {
-        const nodeToUpdate = nodes.find((n) => n.id === nodeId);
-        if (!nodeToUpdate) {
-          return Promise.reject(new Error(`Node with ID ${nodeId} not found`));
-        }
-        const { position: newPosition, ...updateData } = updates;
-        const updatedNode = {
-          ...nodeToUpdate,
-          data: { ...nodeToUpdate.data, ...updateData },
-          position: newPosition || nodeToUpdate.position,
-        };
-        setNodes((nds) => nds.map((n) => (n.id === nodeId ? updatedNode : n)));
-        setPendingChanges((prev) => ({
-          ...prev,
-          updatedNodes: [...new Set([...prev.updatedNodes, nodeId])],
-        }));
-        saveStateToHistory();
-        const backendNode = {
-          id: updatedNode.id,
-          data: updatedNode.data,
-          position: updatedNode.position,
-        };
-        return Promise.resolve(backendNode as Node);
-      },
-      [nodes, setNodes, saveStateToHistory]
-    );
-
-    // Drag and drop handlers
-    const onDragOver = useCallback((event: React.DragEvent) => {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-    }, []);
-
-    const onDrop = useCallback(
-      (event: React.DragEvent) => {
-        event.preventDefault();
-
-        if (!dragNodeType || !reactFlowWrapper.current) return;
-
-        // Get the ReactFlow container bounds
-        const reactFlowBounds =
-          reactFlowWrapper.current.getBoundingClientRect();
-
-        // Calculate position relative to the container
-        const position = reactFlowInstance.project({
-          x: event.clientX - reactFlowBounds.left,
-          y: event.clientY - reactFlowBounds.top,
-        });
-
-        // Create a new node with the dragged type
-        const newNodeData: CreateNodeRequest = {
-          id: `temp_${uuidv4()}`,
-          name: `New ${dragNodeType}`,
-          type: dragNodeType,
-          description: "",
-          position,
-          connectionDirection: "all",
-        };
-
-        // Use the existing addNode method
-        addNode(newNodeData);
-
-        // Reset drag state
-        if (onDragEnd) onDragEnd();
-      },
-      [dragNodeType, addNode, onDragEnd, reactFlowInstance]
-    );
-
+    // Imperative handle for ref
     useImperativeHandle(ref, () => ({
       addNode,
       deleteNode,
@@ -943,46 +628,55 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
       getAutoSaveInterval: () => autoSaveInterval,
     }));
 
-    if (!isInitialized && (nodesLoading || edgesLoading)) {
+    if (!isInitialized) {
       return <div>Loading...</div>;
     }
 
-    if (!isInitialized && (nodesError || edgesError)) {
-      return <div>Error loading graph data.</div>;
-    }
-
     return (
-      <div ref={reactFlowWrapper} style={{ height: "100%", width: "100%" }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={handleNodesChange}
-          onEdgesChange={handleEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={handleNodeClick}
-          onPaneClick={handlePaneClick}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          isValidConnection={isValidConnection}
-          connectionMode={ConnectionMode.Loose}
-          fitView
-          attributionPosition="bottom-left"
-          proOptions={{ hideAttribution: true }}
-          style={{ backgroundColor: "#2d3748" }}
-          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-          minZoom={0.2}
-          maxZoom={2}
-          snapToGrid={snapToGrid}
-          snapGrid={[GRID_SIZE, GRID_SIZE]}
-          nodesDraggable={isInteractive}
-          nodesConnectable={isInteractive}
-          elementsSelectable={isInteractive}
-          panOnDrag={isInteractive}
-          onNodeDragStart={onNodeDragStart}
-          onNodeDragStop={onNodeDragStop}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
+      <div ref={reactFlowWrapper} style={{ height: '100%', width: '100%' }}>
+        <GraphDataManager
+          shouldLoadFromDB={shouldLoadFromDB}
+          setShouldLoadFromDB={setShouldLoadFromDB}
+          setNodes={setNodes}
+          setEdges={setEdges}
+          setHistory={setHistory}
+          setHistoryIndex={setHistoryIndex}
+          setIsInitialized={setIsInitialized}
+          setPendingChanges={setPendingChanges}
+        />
+        
+        <EdgeInteractionProvider showConnectionDetails={showConnectionDetails}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={connectionHandler.onConnect}
+            onNodeClick={handleNodeClick}
+            onNodeContextMenu={handleNodeContextMenu}
+            onPaneClick={handlePaneClick}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            isValidConnection={connectionHandler.isValidConnection}
+            connectionMode={ConnectionMode.Loose}
+            fitView
+            attributionPosition="bottom-left"
+            proOptions={{ hideAttribution: true }}
+            style={{ backgroundColor: '#2d3748' }}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            minZoom={0.2}
+            maxZoom={2}
+            snapToGrid={snapToGrid}
+            snapGrid={[GRID_SIZE, GRID_SIZE]}
+            nodesDraggable={isInteractive}
+            nodesConnectable={isInteractive}
+            elementsSelectable={isInteractive}
+            panOnDrag={isInteractive}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDragStop={onNodeDragStop}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
           <Panel position="bottom-left">
             <CustomControls
               snapToGrid={snapToGrid}
@@ -1001,49 +695,64 @@ export const WorldGraph = forwardRef<WorldGraphRef, UpdatedWorldGraphProps>(
               edgeCount={edges.length}
             />
           </Panel>
+          
           <MiniMap
             nodeColor={(node) => {
               const colors: Record<NodeType, string> = {
-                character: "#93c5fd",
-                faction: "#fca5a5",
-                city: "#fdba74",
-                event: "#6ee7b7",
-                location: "#d8b4fe",
+                character: '#93c5fd',
+                faction: '#fca5a5',
+                city: '#fdba74',
+                event: '#6ee7b7',
+                location: '#d8b4fe',
               };
-              return colors[node.data?.type as NodeType] || "#DDD";
+              return colors[node.data?.type as NodeType] || '#DDD';
             }}
             className="!bg-gray-900 !border !border-gray-600 !rounded"
           />
+          
           <Background
             variant={BackgroundVariant.Lines}
             gap={20}
             size={1}
             color="#4a5568"
           />
-        </ReactFlow>
-        <ConnectionModal
-          isOpen={connectionModal.isOpen}
-          onClose={() => {
-            setConnectionModal((prev) => ({ ...prev, isOpen: false }));
-            setPendingConnection(null);
-          }}
-          onCreate={handleCreateConnection}
-          sourceNodeName={connectionModal.sourceNodeName}
-          targetNodeName={connectionModal.targetNodeName}
-          suggestedType={connectionModal.suggestedType}
-        />
-        <ImportExportModal
-          importDetails={importDetails}
-          isOpen={importExportModal.isOpen}
-          onClose={handleImportExportClose}
-          onImport={handleImport}
-          onExport={handleExport}
-          nodeCount={nodes.length}
-          edgeCount={edges.length}
-        />
+          </ReactFlow>
+        </EdgeInteractionProvider>
+        
+        {connectionHandler.ConnectionModal}
+        {ImportExportModalComponent}
+        
+        {nodeDetailsCard.node && (
+          <NodeDetailsCard
+            key="node-details-card"
+            isVisible={nodeDetailsCard.isVisible}
+            node={nodeDetailsCard.node}
+            position={nodeDetailsCard.position}
+            onClose={() => setNodeDetailsCard({ isVisible: false, node: null, position: { x: 0, y: 0 } })}
+          />
+        )}
+        
+        {nodeContextMenu && nodeContextMenu.node && (
+          <ContextMenu
+            x={nodeContextMenu.x}
+            y={nodeContextMenu.y}
+            options={getNodeContextMenuOptions(nodeContextMenu.node)}
+            onClose={() => setNodeContextMenu(null)}
+          />
+        )}
+        
+        {connectionDetailsCard.data && (
+          <ConnectionDetailsCard
+            key="connection-details-card"
+            isVisible={connectionDetailsCard.isVisible}
+            data={connectionDetailsCard.data}
+            position={connectionDetailsCard.position}
+            onClose={() => setConnectionDetailsCard({ isVisible: false, data: null, position: { x: 0, y: 0 } })}
+          />
+        )}
       </div>
     );
   }
 );
 
-WorldGraph.displayName = "WorldGraph";
+WorldGraph.displayName = 'WorldGraph';

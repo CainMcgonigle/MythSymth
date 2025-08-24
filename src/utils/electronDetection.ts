@@ -15,7 +15,7 @@ export const isElectron = (): boolean => {
     const electronIndicators = [
       "require" in window,
       "module" in window,
-      "process" in window && (window as any).process?.type,
+      "process" in window && (window as unknown as { process?: { type?: string } }).process?.type,
       "__dirname" in window,
       "__filename" in window,
     ];
@@ -46,7 +46,7 @@ export const isElectronDev = (): boolean => {
   // Check for development indicators
   return (
     (typeof process !== "undefined" &&
-      process.env?.NODE_ENV === "development") ||
+      process.env && process.env.NODE_ENV === "development") ||
     (typeof window !== "undefined" && window.location?.hostname === "localhost")
   );
 };

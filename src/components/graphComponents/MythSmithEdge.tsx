@@ -8,7 +8,6 @@ import {
 } from "reactflow";
 import { createPortal } from "react-dom";
 import ConnectionModal from "../ConnectionModal";
-import ConnectionDetailsCard from "./edges/connectionDetailsCard";
 import EdgeContextMenu from "./edges/edgeContextMenu";
 import { MythSmithEdgeData } from "@/types";
 import {
@@ -16,9 +15,9 @@ import {
   calculateBezierAngleAtT,
   getBidirectionalPaths,
 } from "@/utils/edgeUtils";
+import { useEdgeInteraction } from "@/contexts/EdgeInteractionContext";
 
-const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = React.memo(
-  ({
+const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = ({
     id,
     sourceX,
     sourceY,
@@ -32,17 +31,13 @@ const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = React.memo(
     selected,
   }) => {
     const { setEdges } = useReactFlow();
+    const { showConnectionDetails } = useEdgeInteraction();
 
     const [contextMenu, setContextMenu] = useState<{
       x: number;
       y: number;
     } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [detailsCardVisible, setDetailsCardVisible] = useState(false);
-    const [detailsCardPosition, setDetailsCardPosition] = useState({
-      x: 0,
-      y: 0,
-    });
 
     const [edgePath, labelX, labelY] = getBezierPath({
       sourceX,
@@ -131,19 +126,21 @@ const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = React.memo(
     const handleLabelClick = (evt: React.MouseEvent) => {
       evt.preventDefault();
       evt.stopPropagation();
-      setDetailsCardPosition({ x: evt.clientX, y: evt.clientY });
-      setDetailsCardVisible(true);
+      if (data) {
+        showConnectionDetails(id, data, { x: evt.clientX, y: evt.clientY });
+      }
     };
     const handleDeleteEdge = () => {
       setEdges((eds) => eds.filter((edge) => edge.id !== id));
     };
     const handleEditEdge = () => setIsEditModalOpen(true);
     const handleViewDetails = () => {
-      setDetailsCardPosition({
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2,
-      });
-      setDetailsCardVisible(true);
+      if (data) {
+        showConnectionDetails(id, data, {
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+      }
     };
     const handleToggleAnimation = () => {
       setEdges((eds) =>
@@ -289,15 +286,6 @@ const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = React.memo(
           />
         )}
 
-        {/* Details card */}
-        {data && (
-          <ConnectionDetailsCard
-            isVisible={detailsCardVisible}
-            data={data}
-            position={detailsCardPosition}
-            onClose={() => setDetailsCardVisible(false)}
-          />
-        )}
 
         {/* Edit modal */}
         {isEditModalOpen &&
@@ -320,8 +308,7 @@ const MythSmithEdge: React.FC<EdgeProps<MythSmithEdgeData>> = React.memo(
           )}
       </>
     );
-  }
-);
+};
 
 MythSmithEdge.displayName = "MythSmithEdge";
 export default MythSmithEdge;

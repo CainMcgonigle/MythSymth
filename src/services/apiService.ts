@@ -1,11 +1,22 @@
 // services/apiService.ts
+import { QueryClient } from "@tanstack/react-query";
 import { NodesApiService } from "./nodesApiService";
 import { EdgesApiService } from "./edgesApiService";
 import { MapApiService } from "./mapApiService";
 import { HealthApiService } from "./healthApiService";
 import { ImportApiService } from "./importApiService";
 
-class ApiService {
+interface IApiService {
+  nodes: NodesApiService;
+  edges: EdgesApiService;
+  map: MapApiService;
+  health: HealthApiService;
+  import: ImportApiService;
+  setQueryClient(queryClient: QueryClient): void;
+  initialize(): Promise<void>;
+}
+
+class ApiService implements IApiService {
   public nodes: NodesApiService;
   public edges: EdgesApiService;
   public map: MapApiService;
@@ -20,7 +31,7 @@ class ApiService {
     this.import = new ImportApiService();
   }
 
-  setQueryClient(queryClient: any) {
+  setQueryClient(queryClient: QueryClient): void {
     this.nodes.setQueryClient(queryClient);
     this.edges.setQueryClient(queryClient);
     this.map.setQueryClient(queryClient);

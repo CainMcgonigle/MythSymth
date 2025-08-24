@@ -1,8 +1,8 @@
-import React, { useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
-import { X } from "lucide-react";
-import { MythSmithEdgeData } from "@/types";
-import * as Icons from "lucide-react";
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
+import { MythSmithEdgeData } from '@/types';
+import * as Icons from 'lucide-react';
 
 interface ConnectionDetailsCardProps {
   isVisible: boolean;
@@ -37,6 +37,11 @@ const ConnectionDetailsCard: React.FC<ConnectionDetailsCardProps> = ({
 
   useEffect(() => {
     if (!isVisible) return;
+    
+    if (cardRef.current) {
+      cardRef.current.focus();
+    }
+    
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
@@ -47,16 +52,46 @@ const ConnectionDetailsCard: React.FC<ConnectionDetailsCardProps> = ({
 
   if (!isVisible) return null;
 
-  const typeLabels: Record<MythSmithEdgeData["type"], string> = {
-    friendship: "Friendship",
-    rivalry: "Rivalry",
-    alliance: "Alliance",
-    conflict: "Conflict",
-    location: "Location",
-    event: "Event",
-    family: "Family",
-    trade: "Trade",
-    custom: "Custom",
+  const getConnectionStyles = (type: MythSmithEdgeData["type"]) => {
+    const styleMap = {
+      friendship: {
+        color: '#10b981',
+        label: 'Friendship'
+      },
+      rivalry: {
+        color: '#ef4444',
+        label: 'Rivalry'
+      },
+      alliance: {
+        color: '#3b82f6',
+        label: 'Alliance'
+      },
+      conflict: {
+        color: '#f59e0b',
+        label: 'Conflict'
+      },
+      location: {
+        color: '#8b5cf6',
+        label: 'Location'
+      },
+      event: {
+        color: '#06b6d4',
+        label: 'Event'
+      },
+      family: {
+        color: '#ec4899',
+        label: 'Family'
+      },
+      trade: {
+        color: '#84cc16',
+        label: 'Trade'
+      },
+      custom: {
+        color: data?.customColor || '#6b7280',
+        label: 'Custom'
+      },
+    };
+    return styleMap[type] || styleMap.custom;
   };
 
   const strengthLabels = {
@@ -65,42 +100,12 @@ const ConnectionDetailsCard: React.FC<ConnectionDetailsCardProps> = ({
     strong: "Strong",
   };
 
-  const typeColors: Record<MythSmithEdgeData["type"], string> = {
-    friendship: "#10b981",
-    rivalry: "#ef4444",
-    alliance: "#3b82f6",
-    conflict: "#f59e0b",
-    location: "#8b5cf6",
-    event: "#06b6d4",
-    family: "#ec4899",
-    trade: "#84cc16",
-    custom: data?.customColor || "#6b7280",
-  };
-
-  const connectionColor = typeColors[data?.type || "custom"];
-
-  // Card positioning
-  const maxWidth = 320;
-  const estimatedHeight = 200;
-  const padding = 10;
-
-  let adjustedX = position.x;
-  let adjustedY = position.y - 10;
-
-  if (adjustedX + maxWidth > window.innerWidth - padding) {
-    adjustedX = position.x - maxWidth;
-  }
-  if (adjustedY < padding) {
-    adjustedY = position.y + 30;
-  }
-  if (adjustedY + estimatedHeight > window.innerHeight - padding) {
-    adjustedY = window.innerHeight - estimatedHeight - padding;
-  }
+  const connectionStyles = getConnectionStyles(data?.type || "custom");
 
   const renderIcon = () => {
     if (!data?.customIconName) {
       return (
-        data?.label?.[0]?.toUpperCase() || typeLabels[data?.type || "custom"][0]
+        data?.label?.[0]?.toUpperCase() || connectionStyles.label[0]
       );
     }
     const IconComponent = Icons[data.customIconName as keyof typeof Icons] as
@@ -111,46 +116,53 @@ const ConnectionDetailsCard: React.FC<ConnectionDetailsCardProps> = ({
     ) : null;
   };
 
+  const maxWidth = 320;
+  const adjustedX = position.x;
+  const adjustedY = position.y;
+
   return createPortal(
     <div
       ref={cardRef}
-      className="fixed z-[100000] animate-in fade-in zoom-in-95 duration-300"
+      className="fixed z-[100000] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-300 outline-none"
       style={{
         left: adjustedX,
         top: adjustedY,
         maxWidth: `${maxWidth}px`,
+        transition: 'left 0.3s ease-out, top 0.3s ease-out',
       }}
+      tabIndex={-1}
     >
       {/* Card */}
       <div
-        className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl overflow-hidden"
+        className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl overflow-hidden transition-all duration-300"
         style={{
-          boxShadow: `0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px ${connectionColor}40`,
+          boxShadow: `0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px ${connectionStyles.color}40`,
         }}
       >
         {/* Header */}
         <div
           className="relative p-4 text-white overflow-hidden border-b border-gray-700"
           style={{
-            background: `linear-gradient(135deg, ${connectionColor}, ${connectionColor}dd)`,
+            background: `linear-gradient(135deg, ${connectionStyles.color}, ${connectionStyles.color}dd)`,
           }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold shadow-lg backdrop-blur-sm"
+                className="w-10 h-10 rounded-lg flex items-center justify-center shadow-lg backdrop-blur-sm"
                 style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
               >
                 {renderIcon()}
               </div>
               <div>
                 <h3 className="font-semibold text-lg leading-tight">
-                  {data?.label || typeLabels[data?.type || "custom"]}
+                  {data?.label || connectionStyles.label}
                 </h3>
-                <p className="text-white/70 text-sm">
-                  {typeLabels[data?.type || "custom"]} •{" "}
-                  {strengthLabels[data?.strength || "moderate"]}
-                </p>
+                <div className="flex items-center space-x-2 text-white/70 text-sm">
+                  <span>{connectionStyles.label}</span>
+                  <span>•</span>
+                  <span>{strengthLabels[data?.strength || "moderate"]}</span>
+                </div>
               </div>
             </div>
             <button
@@ -186,26 +198,26 @@ const ConnectionDetailsCard: React.FC<ConnectionDetailsCardProps> = ({
                       : "opacity-20"
                   }`}
                   style={{
-                    backgroundColor: connectionColor,
+                    backgroundColor: connectionStyles.color,
                   }}
                 />
               ))}
             </div>
           </div>
 
-          {/* Description */}
-          {data?.description && (
+          {data?.description ? (
             <div className="space-y-2">
-              <span className="text-gray-300 text-sm font-medium">
-                Description
-              </span>
+              <span className="text-gray-300 text-sm font-medium">Description</span>
               <div className="text-white text-sm leading-relaxed p-3 bg-gray-700/50 rounded-lg border border-gray-600">
                 {data.description}
               </div>
             </div>
+          ) : (
+            <div className="text-gray-500 text-sm italic p-3 bg-gray-700/30 rounded-lg border border-gray-600">
+              No description provided
+            </div>
           )}
 
-          {/* Properties */}
           <div className="space-y-3 pt-2">
             <div className="flex flex-wrap gap-2">
               {data?.bidirectional && (
@@ -224,11 +236,10 @@ const ConnectionDetailsCard: React.FC<ConnectionDetailsCardProps> = ({
           </div>
         </div>
 
-        {/* Bottom Accent */}
         <div
           className="h-1"
           style={{
-            background: `linear-gradient(90deg, ${connectionColor}, ${connectionColor}80, ${connectionColor})`,
+            background: `linear-gradient(90deg, ${connectionStyles.color}, ${connectionStyles.color}80, ${connectionStyles.color})`,
           }}
         />
       </div>

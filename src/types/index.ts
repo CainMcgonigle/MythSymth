@@ -82,6 +82,16 @@ export interface ElectronAPI {
   isWindowMaximized(): Promise<boolean>;
   onWindowStateChange(callback: (isMaximized: boolean) => void): void;
   removeWindowStateListener(): void;
+  sendLog?(entry: LogEntry): void;
+}
+
+export interface LogEntry {
+  timestamp: Date;
+  level: number;
+  message: string;
+  context?: string;
+  data?: Record<string, unknown>;
+  error?: Error;
 }
 
 declare global {
